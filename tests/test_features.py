@@ -788,3 +788,21 @@ def test_router_open_file_phrase(monkeypatch):
     from assistant import router, tools
     monkeypatch.setattr(tools, "open_file", lambda n, f=None: f"opened {n} in {f}")
     assert router.route("open my resume in downloads") == "opened my resume in downloads" or router.route("open my resume in downloads").startswith("opened")
+
+
+def test_open_file_refuses_programs(tmp_path, monkeypatch):
+    import subprocess
+    from assistant import tools
+    (tmp_path / "setup tool.command").write_text("echo hi")
+    monkeypatch.setattr(tools, "_SEARCH_DIRS", [str(tmp_path)])
+    calls = []
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: calls.append(a))
+    assert "won't launch" in tools.open_file("setup tool")
+    assert calls == []
+
+
+def test_open_unknown_app_falls_through_to_agent(monkeypatch):
+    from assistant import router, tools
+    def boom(name): raise RuntimeError("no app")
+    monkeypatch.setattr(tools, "open_app", boom)
+    assert router.route("open my resume") is None

@@ -194,7 +194,9 @@ def memory_block() -> str:
 
 @tool("open_app", "Open a macOS application by name (e.g. Safari, Notes, Spotify).", {"name": {"type": "string"}}, ["name"])
 def open_app(name: str) -> str:
-    subprocess.run(["open", "-a", name], check=True, capture_output=True, timeout=15)
+    r = subprocess.run(["open", "-a", name], capture_output=True, text=True, timeout=15)
+    if r.returncode != 0:
+        raise RuntimeError(f"I couldn't find an app called {name}.")
     return f"Opened {name}."
 
 
@@ -632,6 +634,9 @@ def find_files(name: str, folder: Optional[str] = None) -> str:
     return msg
 
 
+_LAUNCHERS = {".command", ".sh", ".app", ".pkg", ".dmg", ".scpt", ".workflow", ".jar", ".terminal", ".tool", ".action", ".exe", ".msi"}
+
+
 @tool("open_file", "Open a file (or folder) on the Mac in its default app, e.g. 'open my resume in downloads'. Finds it by name "
                    "in Downloads, Desktop and Documents, or takes a full path. Opens the newest match.",
       {"name": {"type": "string", "description": "words in the file name, or a full path"},
@@ -647,6 +652,8 @@ def open_file(name: str, folder: Optional[str] = None) -> str:
             return f"I couldn't find a file matching '{name}'" + (f" in {folder}." if folder else ".") + \
                    ("\n" + _PRIVACY_HINT.format(d=", ".join(blocked)) if blocked else "")
         target = hits[0][1]
+    if target.suffix.lower() in _LAUNCHERS:   # opening these would RUN or install something: never from a voice/web-driven tool
+        return f"{target.name} is a program or installer, so I won't launch it. Open it yourself in Finder."
     subprocess.run(["open", str(target)], check=True, capture_output=True, timeout=15)
     more = f" ({len(hits) - 1} other matches)" if not name.startswith(("~", "/")) and len(hits) > 1 else ""
     return f"Opened {target.name}{more}."
