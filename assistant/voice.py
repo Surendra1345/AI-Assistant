@@ -90,13 +90,7 @@ class Voice:
     def _load_stt(self):
         if self._stt is None:
             from faster_whisper import WhisperModel
-            self._stt = None
-            if config.WHISPER_DEVICE in ("auto", "mps"):  # Apple GPU is about 2x faster
-                try:
-                    self._stt = WhisperModel(config.WHISPER_MODEL, device="mps", compute_type="float16")
-                    self._stt_dev = "mps"
-                except Exception:
-                    self._stt = None
+            self._stt = None  # note: faster-whisper (CTranslate2) has no Apple GPU backend, so it always runs on CPU
             if self._stt is None:
                 self._stt = WhisperModel(config.WHISPER_MODEL, device="cpu", compute_type="int8")
                 self._stt_dev = "cpu"

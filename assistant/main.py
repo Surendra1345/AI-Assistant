@@ -95,7 +95,7 @@ def main():
               else f"Voice: {config.TTS_VOICE} (add ELEVENLABS_API_KEY to .env to use the Vikram voice).")
     if voice:
         if voice.using_speakers():
-            print("Using the laptop speakers: say 'hey happy' before each request, and press Enter to stop it talking. "
+            print(f"Using the laptop speakers: say '{config.WAKE_WORD.replace('_', ' ')}' before each request, and press Enter to stop it talking. "
                   "(With earbuds you can talk over it and chat without the wake word.)")
         else:
             print("Headphones detected: you can talk over it, and keep chatting without the wake word.")

@@ -6,6 +6,7 @@ from typing import Optional
 from . import tools
 
 _APP = re.compile(r"^\W*(?:please\s+)?(?:open|launch|start)\s+(?!(?:a|an|the|my)\s+(?:file|folder|email|note)\b)([\w .+&-]{2,40}?)\W*$", re.I)
+_FILE = re.compile(r"^\W*(?:please\s+)?(?:open|show|pull up)\s+(?:me\s+)?(?:the\s+|my\s+)?(?:file\s+)?([\w .'&-]{2,60}?)\s+(?:file\s+)?(?:(?:in|on|from)\s+(?:my\s+|the\s+)?(downloads|desktop|documents)(?:\s+folder)?)\W*$", re.I)
 _VOL = re.compile(r"^\W*(?:set\s+)?(?:the\s+)?volume\s+(?:to\s+)?(\d{1,3})\W*(?:percent|%)?\W*$", re.I)
 _TIME = re.compile(r"^\W*what(?:'s| is)?\s+the\s+(?:time|date)\W*$|^\W*what\s+time\s+is\s+it\W*$", re.I)
 _LIST = re.compile(r"^\W*(?:what(?:'s| is)\s+on\s+my\s+(?:list|to-?do\s*list)|(?:show|read)\s+(?:me\s+)?my\s+(?:to-?dos?|list))\W*$", re.I)
@@ -37,6 +38,8 @@ def route(text: str) -> Optional[str]:
             return tools.list_windows()
         if m := _DONE.match(text):
             return tools.complete_todo(int(m.group(1)))
+        if m := _FILE.match(text):
+            return tools.open_file(m.group(1).strip(), m.group(2))
         if m := _APP.match(text):
             return tools.open_app(m.group(1).strip())
     except Exception as e:
