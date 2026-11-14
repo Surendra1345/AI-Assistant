@@ -41,7 +41,10 @@ def route(text: str) -> Optional[str]:
         if m := _FILE.match(text):
             return tools.open_file(m.group(1).strip(), m.group(2))
         if m := _APP.match(text):
-            return tools.open_app(m.group(1).strip())
+            try:
+                return tools.open_app(m.group(1).strip())
+            except Exception:
+                return None   # not an app ("open my resume"): let the full agent work out what was meant
     except Exception as e:
         return f"That didn't work: {e}"
     return None
