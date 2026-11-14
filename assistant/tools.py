@@ -541,6 +541,16 @@ def send_email(to: str, subject: str, body: str) -> str:
     return "Email sent."
 
 
+@tool("email_me", "Email the user at their own address (configured as USER_EMAIL). Use it for 'mail me the result/summary'. "
+                  "No approval needed because it only goes to the user.",
+      {"subject": {"type": "string"}, "body": {"type": "string"}}, ["subject", "body"])
+def email_me(subject: str, body: str) -> str:
+    if not config.USER_EMAIL:
+        return "ERROR: no email address is set. Ask the user for it, and tell them to add USER_EMAIL=... to .env."
+    macos.osascript(_MAIL_SCRIPT, subject, body, "yes", config.USER_EMAIL)
+    return "Emailed it to you."
+
+
 # ---------------------------------------------------------------- files and code
 
 @tool("list_dir", "List files in a folder.", {"path": {"type": "string"}}, ["path"])
@@ -579,11 +589,8 @@ def _read_document(p: Path) -> str:
     return p.read_text(errors="replace")
 
 
-@tool("find_files", "Find files by name in Downloads, Desktop and Documents (newest first). Use it when the user names a file "
-                    "without a full path, like 'my resume in downloads'.",
-      {"name": {"type": "string", "description": "words in the file name, e.g. 'resume'"},
-       "folder": {"type": "string", "description": "optional: downloads, desktop, documents or a path"}}, ["name"])
-def find_files(name: str, folder: Optional[str] = None) -> str:
+def _search_files(name: str, folder: Optional[str] = None):
+    """([(mtime, path)] newest first, [blocked folders]) for files whose name contains every word of `name`."""
     words = [w for w in re.split(r"\W+", name.lower()) if w]
     if folder:
         f = folder.strip().lower()
@@ -610,13 +617,39 @@ def find_files(name: str, folder: Optional[str] = None) -> str:
             blocked.append(d)
         except OSError:
             pass
-    out = []
-    for _, fp in sorted(hits, reverse=True)[:15]:
-        out.append(str(fp))
-    msg = "\n".join(out) if out else f"No file matching '{name}' found."
+    return sorted(hits, reverse=True), blocked
+
+
+@tool("find_files", "Find files by name in Downloads, Desktop and Documents (newest first). Use it when the user names a file "
+                    "without a full path, like 'my resume in downloads'.",
+      {"name": {"type": "string", "description": "words in the file name, e.g. 'resume'"},
+       "folder": {"type": "string", "description": "optional: downloads, desktop, documents or a path"}}, ["name"])
+def find_files(name: str, folder: Optional[str] = None) -> str:
+    hits, blocked = _search_files(name, folder)
+    msg = "\n".join(str(fp) for _, fp in hits[:15]) if hits else f"No file matching '{name}' found."
     if blocked:
         msg += "\n" + _PRIVACY_HINT.format(d=", ".join(blocked))
     return msg
+
+
+@tool("open_file", "Open a file (or folder) on the Mac in its default app, e.g. 'open my resume in downloads'. Finds it by name "
+                   "in Downloads, Desktop and Documents, or takes a full path. Opens the newest match.",
+      {"name": {"type": "string", "description": "words in the file name, or a full path"},
+       "folder": {"type": "string", "description": "optional: downloads, desktop, documents"}}, ["name"])
+def open_file(name: str, folder: Optional[str] = None) -> str:
+    if name.startswith(("~", "/")):
+        target = _check_readable(Path(name))
+        if not target.exists():
+            return f"Nothing at {name}."
+    else:
+        hits, blocked = _search_files(name, folder)
+        if not hits:
+            return f"I couldn't find a file matching '{name}'" + (f" in {folder}." if folder else ".") + \
+                   ("\n" + _PRIVACY_HINT.format(d=", ".join(blocked)) if blocked else "")
+        target = hits[0][1]
+    subprocess.run(["open", str(target)], check=True, capture_output=True, timeout=15)
+    more = f" ({len(hits) - 1} other matches)" if not name.startswith(("~", "/")) and len(hits) > 1 else ""
+    return f"Opened {target.name}{more}."
 
 
 @tool("read_file", "Read a file's text (txt, md, code, PDF, Word .docx). First ~6000 characters.", {"path": {"type": "string"}}, ["path"])

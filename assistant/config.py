@@ -23,6 +23,9 @@ NOTES_DIR = HOME / "notes"
 WORKSPACE = HOME / "workspace"
 PLANS_DIR = HOME / "plans"
 
+# Where "mail me ..." goes (your own address)
+USER_EMAIL = os.environ.get("USER_EMAIL", "")
+
 # Brain (cloud). Only the TEXT of your requests and tool results is sent. Audio never leaves the Mac.
 API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 MODEL = os.environ.get("ASSISTANT_MODEL", "claude-sonnet-5-5")

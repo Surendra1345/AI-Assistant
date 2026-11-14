@@ -758,3 +758,33 @@ def test_enter_stops_speech_in_both_modes():
             stream = _Stream(p, [])
         assert v._wait(p, stream, _st()) is True and p.dead
     v.stop_requested = False
+
+
+def test_open_file_finds_newest_and_opens(tmp_path, monkeypatch):
+    import os, subprocess
+    from assistant import tools
+    d = tmp_path / "Downloads"; d.mkdir()
+    old, new = d / "resume old.pdf", d / "resume new.pdf"
+    old.write_text("a"); new.write_text("b"); os.utime(old, (1, 1))
+    monkeypatch.setattr(tools, "_SEARCH_DIRS", [str(d)])
+    calls = []
+    monkeypatch.setattr(subprocess, "run", lambda cmd, **k: calls.append(cmd))
+    assert "resume new.pdf" in tools.open_file("resume")
+    assert calls == [["open", str(new)]]
+    assert "couldn't find" in tools.open_file("nothingherexyz")
+
+
+def test_email_me_uses_configured_address(monkeypatch):
+    from assistant import tools, config, macos
+    sent = []
+    monkeypatch.setattr(macos, "osascript", lambda *a, **k: sent.append(a))
+    monkeypatch.setattr(config, "USER_EMAIL", "")
+    assert tools.email_me("s", "b").startswith("ERROR")
+    monkeypatch.setattr(config, "USER_EMAIL", "me@example.com")
+    assert "Emailed" in tools.email_me("s", "b") and sent[0][-1] == "me@example.com"
+
+
+def test_router_open_file_phrase(monkeypatch):
+    from assistant import router, tools
+    monkeypatch.setattr(tools, "open_file", lambda n, f=None: f"opened {n} in {f}")
+    assert router.route("open my resume in downloads") == "opened my resume in downloads" or router.route("open my resume in downloads").startswith("opened")
