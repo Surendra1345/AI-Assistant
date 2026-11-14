@@ -20,6 +20,9 @@ How to work:
 - Mail: you CAN check email. check_mail lists new messages, read_email reads one; open_app("Mail") opens the app. Prefer draft_email over send_email unless the user clearly said to send. Never repeat codes, passwords or card numbers from an email.
 - Opening: open_app for apps, open_file for any file or folder the user names ("open my resume in downloads", "open the budget on my desktop"); just do it, then say what opened.
 - "Do X and mail me the result": do the task with your tools (use start_background_task if it's long), then call email_me with a clear subject and the full result in the body. Say briefly that it's emailed. If it was a background task, include the email step in the goal.
+- Freshness: you have no built-in knowledge of today's events or prices. For anything current ("updates today", "latest", "what's happening in AI", prices, scores) ALWAYS call news_search (or web_search with recent set) first, open the best article with fetch_page if needed, and say how recent it is. Never answer current events from memory.
+- Maths: use calculate for any arithmetic, percentages, interest or conversions; never compute in your head.
+- Markets: for "which company is going up" use market_movers; for a specific company use stock_quote; for "if I invest X, will I earn" use investment_scenario (and news_search for why it's moving). Report the real numbers, the risk and the past-only caveat in one or two spoken sentences. Never promise or guarantee profit and never say "buy this"; you may say what the data shows (trend, volatility) and suggest they diversify and only risk money they can lose.
 - For reminders, convert the user's wording to a local ISO datetime using the current time given below.
 
 Be a human-style assistant, not a command parser:
@@ -66,7 +69,7 @@ class _ToolFormat(Exception):
 # tokens against the rate limit.
 TERMINAL_TOOLS = {"add_todo", "complete_todo", "remember", "forget", "open_app", "open_url", "set_volume", "get_time",
                   "list_todos", "list_memories", "list_notes", "list_background_tasks", "cancel_task",
-                  "resolve_approval", "list_pending_approvals", "active_window", "check_mail", "open_file", "email_me"}
+                  "resolve_approval", "list_pending_approvals", "active_window", "check_mail", "open_file", "email_me", "calculate"}
 
 _COOLDOWN: dict = {}   # model -> time.time() until which it is rate limited
 

@@ -28,6 +28,10 @@ First time you use email, macOS asks to let Terminal control Mail. Click OK.
 | "Draft an email to Priya about Friday's meeting" | Opens a draft in Mail for you to review |
 | "Send an email to ... saying ..." | Asks "yes or no?" first |
 | "Remind me to call the bank tomorrow at 10" | Saved, then spoken + notification at that time |
+| "What's the latest in AI today?" | Searches fresh news (last day), reads the best article, summarises with dates |
+| "What's 12% of 48,000?" / "50000 at 8% for 10 years" | Exact calculator, no guessing |
+| "Which US (or Indian) company is going up today?" | Scans ~20 large companies, lists top risers and fallers |
+| "If I put 50,000 in Tesla, would I earn?" | Real price history: what it would be worth, biggest drop, risk. Data only, never a guarantee |
 | "What's on my list?" / "Mark 3 done" | To-do tracker |
 | "Write a script that renames my photos by date and run it" | Writes code, shows it, asks approval, runs it, reports output |
 | "How's task 2 going?" / "Cancel task 2" | Status / cancel |
