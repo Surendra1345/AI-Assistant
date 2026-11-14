@@ -584,7 +584,8 @@ def test_check_mail_permission_message(monkeypatch):
 def test_router_mail_phrases(monkeypatch):
     monkeypatch.setattr(tools.macos, "osascript", lambda *a, **k: _FAKE_INBOX)
     opened = []
-    monkeypatch.setattr(tools.subprocess, "run", lambda cmd, **k: opened.append(cmd))
+    from types import SimpleNamespace
+    monkeypatch.setattr(tools.subprocess, "run", lambda cmd, **k: opened.append(cmd) or SimpleNamespace(returncode=0))
     for t in ["Can you go to the mail?", "open my email", "go to mail"]:
         assert router.route(t) == "Opened Mail."
     assert opened and opened[0][:2] == ["open", "-a"]
