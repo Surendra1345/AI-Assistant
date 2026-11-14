@@ -80,10 +80,12 @@ def _check_readable(p: Path) -> Path:
 # ---------------------------------------------------------------- research
 
 @tool("web_search", "Search the web. Returns titles, URLs and snippets. Use several searches with different wording for research.",
-      {"query": {"type": "string"}, "max_results": {"type": "integer", "description": "1-8, default 5"}}, ["query"])
-def web_search(query: str, max_results: int = 5) -> str:
+      {"query": {"type": "string"}, "max_results": {"type": "integer", "description": "1-8, default 5"},
+       "recent": {"type": "string", "enum": ["day", "week", "month", "year"], "description": "only results from this period"}}, ["query"])
+def web_search(query: str, max_results: int = 5, recent: Optional[str] = None) -> str:
     from ddgs import DDGS
-    results = DDGS().text(query, max_results=max(1, min(int(max_results), 8)))
+    results = DDGS().text(query, max_results=max(1, min(int(max_results), 8)),
+                          timelimit={"day": "d", "week": "w", "month": "m", "year": "y"}.get(recent or ""))
     if not results:
         return "No results."
     return "\n\n".join(f"{r.get('title')}\n{r.get('href')}\n{r.get('body')}" for r in results)
@@ -739,3 +741,6 @@ def list_pending_approvals() -> str:
       {"approval_id": {"type": "integer"}, "approve": {"type": "boolean"}}, ["approval_id", "approve"], foreground_only=True)
 def resolve_approval(approval_id: int, approve: bool) -> str:
     return "Done." if SERVICES.approvals.resolve(approval_id, approve) else "No such pending approval."
+
+
+from . import finance  # noqa: E402,F401  (registers calculate, stock_quote, market_movers, investment_scenario, news_search)

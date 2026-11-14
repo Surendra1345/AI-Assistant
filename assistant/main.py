@@ -7,7 +7,7 @@ import time
 
 from datetime import datetime
 
-from . import config, macos, router, store, tools
+from . import config, finance, macos, router, store, tools  # noqa: F401 (finance registers its tools)
 from .brain import Agent
 from .safety import Approvals
 from .tasks import ProactiveMonitor, ReminderScheduler, TaskManager
