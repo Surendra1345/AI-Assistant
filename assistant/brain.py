@@ -45,7 +45,7 @@ NO_BRAIN_MSG = "I can't reach any of my brains right now. Check your internet co
 
 
 _UNAVAILABLE = ("APIConnectionError", "APITimeoutError", "RateLimitError", "InternalServerError",
-                "AuthenticationError", "PermissionDeniedError", "OverloadedError")
+                "AuthenticationError", "PermissionDeniedError", "OverloadedError", "NotFoundError")
 
 
 class _Unavailable(Exception):
@@ -72,7 +72,7 @@ _COOLDOWN: dict = {}   # model -> time.time() until which it is rate limited
 def _short(desc: str, limit: int = 110) -> str:
     """First sentence of a tool description: every request pays for the whole tool list, and Groq's free tier
     allows only 8000 tokens a minute, so shorter tool text means more requests before a rate limit."""
-    first = re.split(r"(?<=[.!?])\s", desc.strip(), 1)[0]
+    first = re.split(r"(?<=[.!?])\s", desc.strip(), maxsplit=1)[0]
     return first if len(first) <= limit else first[:limit].rsplit(" ", 1)[0]
 
 
@@ -165,6 +165,7 @@ class Agent:
                 if type(e).__name__ in _UNAVAILABLE:
                     del self.messages[start:]  # drop this turn so tool_use/tool_result pairs stay valid
                     raise _Unavailable() from e
+                del self.messages[start:]  # don't leave a half-finished turn in the history
                 return f"The model call failed: {type(e).__name__}: {e}"
             self.messages.append({"role": "assistant", "content": resp.content})
             if resp.stop_reason != "tool_use":

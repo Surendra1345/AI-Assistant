@@ -86,7 +86,7 @@ def redact(text: str) -> str:
                 if not (13 <= len(digits) <= 19 and _luhn(digits)):
                     return m.group()
             if i == 2:  # keep the label, hide the value
-                return re.split(r"\s*(?:is|was|=|:)\s*", m.group(), 1, flags=re.I)[0] + ": [hidden]"
+                return re.split(r"\s*(?:is|was|=|:)\s*", m.group(), maxsplit=1, flags=re.I)[0] + ": [hidden]"
             return "[hidden]"
         text = pat.sub(sub, text)
     return text

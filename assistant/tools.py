@@ -494,8 +494,8 @@ _BODY_SCRIPT = """on run argv
  end tell
 end run"""
 
-_SENSITIVE_MAIL = re.compile(r"otp|one[- ]time|verification code|security code|passcode|password|\bpin\b|bank|a/c|account (no|number)|"
-                             r"credit card|debit card|statement|transaction|upi", re.I)
+_SENSITIVE_MAIL = re.compile(r"\botp\b|one[- ]time|verification code|security code|passcode|password|\bpin\b|\bbank\b|a/c|account (no|number)|"
+                             r"credit card|debit card|\bstatement\b|\btransaction|\bupi\b", re.I)
 
 
 @tool("check_mail", "Show the unread count and the newest emails (sender and subject) from Apple Mail. Read-only.",
