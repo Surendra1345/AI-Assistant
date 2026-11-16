@@ -34,8 +34,8 @@ def clean(monkeypatch):
 
 # ------------------------------------------------------------ router (fast path, no model)
 @pytest.mark.parametrize("text,expect", [
-    ("what time is it", "20"), ("What's the time?", "20"),
-    ("what's on my list?", "Nothing on the list."), ("briefing", None),
+    ("what time is it", ":"), ("What's the time?", ":"),
+    ("what's on my list?", "clear"), ("briefing", None),
 ])
 def test_router_matches(text, expect):
     out = router.route(text)
@@ -51,7 +51,7 @@ def test_router_ignores_complex_requests():
 
 def test_router_todo_done():
     tid = store.execute("INSERT INTO todos (title, created) VALUES ('x','now')")
-    assert "done" in router.route(f"mark {tid} done.").lower()
+    assert any(w in router.route(f"mark {tid} done.").lower() for w in ("done", "ticked", "complete"))
     assert store.query("SELECT done FROM todos WHERE id=?", (tid,))[0]["done"] == 1
 
 
@@ -202,7 +202,7 @@ def groq_agent(monkeypatch, responses):
 def test_groq_tool_loop_and_null_args(monkeypatch):
     a = groq_agent(monkeypatch, [msg(calls=[call("add_todo", {"title": "call mom", "due": None})])])
     out = a.run("remind me to call mom")
-    assert out.startswith("Added #") and "call mom" in tools.list_todos()
+    assert "call mom" in out and "call mom" in tools.list_todos()      # spoken as "Added to your list: call mom." etc.
     assert len(a.payloads) == 1                      # simple command: answered from the tool result, one model call
     assert [m["role"] for m in a.oa_messages] == ["user", "assistant", "tool", "assistant"]
     name, payload = a.payloads[0]
@@ -213,7 +213,7 @@ def test_groq_tool_loop_and_null_args(monkeypatch):
 def test_groq_bad_json_arguments_do_not_crash(monkeypatch):
     bad = {"id": "c1", "type": "function", "function": {"name": "list_todos", "arguments": "{not json"}}
     a = groq_agent(monkeypatch, [msg(calls=[bad])])
-    assert a.run("what's on my list") == "Nothing on the list."
+    assert "clear" in a.run("what's on my list")
 
 
 def test_fallback_chain_groq_then_ollama_then_nobrain(monkeypatch):
@@ -268,7 +268,7 @@ def test_true_claim_and_negations_are_left_alone(monkeypatch):
 
 def test_malformed_tool_call_is_retried(monkeypatch):
     a = groq_agent(monkeypatch, [brain._ToolFormat(), msg(calls=[call("remember", {"fact": "likes tea"})])])
-    assert a.run("remember I like tea") == "Remembered." and "tea" in tools.list_memories()
+    assert "remember" in a.run("remember I like tea").lower() and "tea" in tools.list_memories()
     a = groq_agent(monkeypatch, [brain._ToolFormat()] * 3)
     assert "say it again" in a.run("x") and a.oa_messages == []
 
@@ -349,7 +349,7 @@ def test_quick_approval_with_punctuation_and_stop_words():
     assert main.handle(agent, ap, "stop") == "" and main.handle(agent, ap, "Never mind.") == ""
     assert main.handle(agent, ap, "approve 99") == "There's no pending approval with that number."
     assert main.handle(agent, ap, "tell me a story") == "AGENT"
-    assert "20" in main.handle(agent, ap, "what time is it")      # router, not the agent
+    assert ":" in main.handle(agent, ap, "what time is it")      # router, not the agent
 
 
 # ------------------------------------------------------------ voice logic that needs no mic
@@ -587,10 +587,10 @@ def test_router_mail_phrases(monkeypatch):
     from types import SimpleNamespace
     monkeypatch.setattr(tools.subprocess, "run", lambda cmd, **k: opened.append(cmd) or SimpleNamespace(returncode=0))
     for t in ["Can you go to the mail?", "open my email", "go to mail"]:
-        assert router.route(t) == "Opened Mail."
+        assert "Mail" in router.route(t)
     assert opened and opened[0][:2] == ["open", "-a"]
     for t in ["check my mail", "do I have any new emails", "any new mail?", "read my inbox"]:
-        assert router.route(t).startswith("3 unread")
+        assert "3 unread" in router.route(t) and "won't read out" in router.route(t) and "482913" not in router.route(t)
     assert router.route("draft an email to priya") is None
 
 

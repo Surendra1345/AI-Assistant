@@ -5,7 +5,7 @@ import time
 from datetime import datetime
 from typing import Optional
 
-from . import config, tools
+from . import config, phrasing, tools
 
 SYSTEM = """You are {name}, the user's personal AI assistant on their MacBook, in the spirit of Tony Stark's JARVIS: calm, capable, quietly witty, always one step ahead. You act on their behalf using tools.
 
@@ -323,8 +323,9 @@ class Agent:
                 out = tools.execute_tool(c["function"]["name"], args, self.task_id)
                 self.oa_messages.append({"role": "tool", "tool_call_id": c["id"], "content": out})
                 if len(calls) == 1 and c["function"]["name"] in TERMINAL_TOOLS and not out.startswith(("ERROR", "Blocked")):
-                    self.oa_messages.append({"role": "assistant", "content": out})
-                    return out
+                    said = phrasing.humanize(c["function"]["name"], out, args)
+                    self.oa_messages.append({"role": "assistant", "content": said})
+                    return said
         return STEP_LIMIT_MSG
 
 

@@ -3,7 +3,7 @@ Anything that doesn't match returns None and goes to the full agent."""
 import re
 from typing import Optional
 
-from . import tools
+from . import phrasing, tools
 
 _APP = re.compile(r"^\W*(?:please\s+)?(?:open|launch|start)\s+(?!(?:a|an|the|my)\s+(?:file|folder|email|note)\b)([\w .+&-]{2,40}?)\W*$", re.I)
 _FILE = re.compile(r"^\W*(?:please\s+)?(?:open|show|pull up)\s+(?:me\s+)?(?:the\s+|my\s+)?(?:file\s+)?([\w .'&-]{2,60}?)\s+(?:file\s+)?(?:(?:in|on|from)\s+(?:my\s+|the\s+)?(downloads|desktop|documents)(?:\s+folder)?)\W*$", re.I)
@@ -25,45 +25,50 @@ _DONE = re.compile(r"^\W*mark\s+(?:to-?do\s+)?#?(\d+)\s+(?:as\s+)?done\W*$", re.
 
 
 def route(text: str) -> Optional[str]:
+    r = _route(text)
+    return r
+
+
+def _route(text: str) -> Optional[str]:
     try:
         if m := _VOL.match(text):
-            return tools.set_volume(int(m.group(1)))
+            return phrasing.humanize("set_volume", tools.set_volume(int(m.group(1))))
         if _TIME.match(text):
-            return tools.get_time()
+            return phrasing.humanize("get_time", tools.get_time())
         if _LIST.match(text):
-            return tools.list_todos()
+            return phrasing.humanize("list_todos", tools.list_todos())
         if _BRIEF.match(text):
             return tools.get_briefing_text()
         if _MAIL_OPEN.match(text):
-            return tools.open_app("Mail")
+            return phrasing.humanize("open_app", tools.open_app("Mail"))
         if _MAIL_CHECK.match(text):
-            return tools.check_mail()
+            return phrasing.humanize("check_mail", tools.check_mail())
         if _ACTIVE.match(text):
             return tools.active_window()
         if _WINDOWS.match(text):
             return tools.list_windows()
         if m := _DONE.match(text):
-            return tools.complete_todo(int(m.group(1)))
+            return phrasing.humanize("complete_todo", tools.complete_todo(int(m.group(1))))
         if _NEXT.match(text):
-            return tools.music_control("next")
+            return phrasing.humanize("music_control", tools.music_control("next"))
         if _PREV.match(text):
-            return tools.music_control("previous")
+            return phrasing.humanize("music_control", tools.music_control("previous"))
         if _NOWPLAYING.match(text):
-            return tools.music_control("status")
+            return phrasing.humanize("music_control", tools.music_control("status"))
         if _PLAY.match(text):
-            return tools.music_control("play")
+            return phrasing.humanize("music_control", tools.music_control("play"))
         if _PAUSE.match(text):
-            return tools.music_control("pause")
+            return phrasing.humanize("music_control", tools.music_control("pause"))
         if m := _QUIT.match(text):
             try:
-                return tools.quit_app(m.group(1).strip())
+                return phrasing.humanize("quit_app", tools.quit_app(m.group(1).strip()))
             except Exception:
                 return None      # "close the door": not an app, let the agent decide
         if m := _FILE.match(text):
-            return tools.open_file(m.group(1).strip(), m.group(2))
+            return phrasing.humanize("open_file", tools.open_file(m.group(1).strip(), m.group(2)))
         if m := _APP.match(text):
             try:
-                return tools.open_app(m.group(1).strip())
+                return phrasing.humanize("open_app", tools.open_app(m.group(1).strip()))
             except Exception:
                 return None   # not an app ("open my resume"): let the full agent work out what was meant
     except Exception as e:
