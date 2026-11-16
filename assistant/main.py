@@ -1,6 +1,7 @@
 """Entry point.  python -m assistant          (voice)
                 python -m assistant --text   (type instead of talk; good for testing)"""
 import argparse
+import random
 import re
 import sys
 import time
@@ -46,6 +47,23 @@ def text_confirm(description: str) -> bool:
 
 
 STOP_WORDS = re.compile(r"^\W*(stop|quiet|enough|cancel|never ?mind|okay|ok|shh+|wait)\W*$", re.I)
+DISMISS = re.compile(r"^\W*(?:ok(?:ay)?\s+|alright\s+)?(thanks|thank you|cheers|that'?s all|that will be all|that'?ll be all|go to sleep|dismissed|"
+                     r"i'?m good|nothing else|that'?s it)(?:\s+(?:so much|a lot|very much))?(?:\s+\w+)?\W*$", re.I)
+# Said just before slow work starts, so the assistant never goes silent while it thinks.
+ACKS = {"web_search": "Searching now.", "news_search": "Checking the latest news.", "fetch_page": "Reading that page.",
+        "market_movers": "Scanning the markets.", "stock_quote": "Pulling the prices.", "investment_scenario": "Running the numbers.",
+        "find_files": "Looking for it.", "read_file": "Reading it now.", "organize_plan": "Taking a look at the folder.",
+        "start_background_task": "On it.", "check_mail": "Checking your mail.", "read_email": "Opening that email."}
+
+
+def make_ack(voice):
+    def ack(tool_name: str):
+        phrase = ACKS.get(tool_name)
+        if phrase and voice and config.ACK_SPOKEN:
+            voice.speak(phrase, barge=False, settle=False)
+    return ack
+
+
 QUICK_APPROVAL = re.compile(r"^\W*(approve|deny)\s+#?(\d+)\W*$", re.I)
 
 
@@ -56,6 +74,8 @@ def handle(agent: Agent, approvals: Approvals, text: str) -> str:
         return "Done." if ok else "There's no pending approval with that number."
     if STOP_WORDS.match(text):  # "stop", "never mind"...: just stay quiet
         return ""
+    if DISMISS.match(text):     # "thanks", "that's all": close the conversation
+        return random.choice(["Anytime.", "Of course.", "At your service.", "Standing by."])
     fast = router.route(text)  # simple commands skip the model entirely
     if fast is not None:
         return fast
@@ -74,7 +94,8 @@ def greet(voice=None):
     store.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('last_greet', ?)", (today,))
     hour = datetime.now().hour
     hello = "Good morning" if hour < 12 else "Good afternoon" if hour < 18 else "Good evening"
-    msg = f"{hello}. " + (brief + "." if brief else "Nothing urgent today.")
+    who = f", {config.USER_TITLE}" if config.USER_TITLE else ""
+    msg = f"{hello}{who}. " + (brief + "." if brief else "Nothing urgent on the schedule.")
     voice.speak(msg) if voice else print(f"Assistant: {msg}")
 
 
@@ -89,6 +110,7 @@ def main():
         voice = Voice()
     agent, approvals = build(voice)
     approvals.interactive_confirm = voice.confirm if voice else text_confirm
+    agent.on_first_tool = make_ack(voice)
 
     if voice and config.TTS_ENGINE == "elevenlabs":
         print("Voice: ElevenLabs (Vikram)." if config.ELEVENLABS_API_KEY
@@ -119,6 +141,8 @@ def main():
                     continue
                 if voice:
                     voice.speak(reply)
+                    if DISMISS.match(text):            # conversation over: back to waiting for the wake word
+                        voice.last_active, voice.follow_until = 0.0, 0.0
                 else:
                     print(f"Assistant: {reply}")
             except (KeyboardInterrupt, EOFError):

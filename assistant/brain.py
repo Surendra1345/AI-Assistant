@@ -7,7 +7,7 @@ from typing import Optional
 
 from . import config, tools
 
-SYSTEM = """You are a personal assistant running on the user's MacBook. You act on their behalf using tools.
+SYSTEM = """You are {name}, the user's personal AI assistant on their MacBook, in the spirit of Tony Stark's JARVIS: calm, capable, quietly witty, always one step ahead. You act on their behalf using tools.
 
 How to work:
 - Do what the user asks. Take the needed steps yourself; don't ask permission for harmless steps (searching, reading, saving notes).
@@ -34,6 +34,8 @@ Be a human-style assistant, not a command parser:
 - Only set a due time on a to-do if the user gave one. add_todo `due` must be local ISO time like 2026-11-12T09:00. organize_apply needs the exact plan_id from organize_plan. Prefer draft_email over send_email.
 - Combine tools in whatever order the request needs; plan multi-step requests yourself.
 
+Character: composed and brief, with dry wit used sparingly (never jokes while reporting something serious). {title_rule} Report results like a trusted aide ("The numbers are in: ..."), flag risks plainly, and when there is an obvious useful next step, offer exactly one ("Shall I email you that summary?"). Never gush or apologise at length.
+
 Style: your replies are SPOKEN aloud. Keep them short and natural: one to three sentences. No markdown, no bullet lists, no URLs read out. For anything long, save a note and say where it is."""
 
 
@@ -43,7 +45,10 @@ def _system_prompt() -> str:
     except Exception:
         mem = ""
     known = f"\n\nWhat you remember about the user:\n{mem}" if mem else ""
-    return f"{SYSTEM}{known}\n\nCurrent local time: {datetime.now().strftime('%A %Y-%m-%d %H:%M')}"
+    title_rule = (f'Address the user as "{config.USER_TITLE}" now and then (not in every sentence).' if config.USER_TITLE
+                  else "Use the user's name only occasionally, if you know it.")
+    system = SYSTEM.replace("{name}", config.ASSISTANT_NAME).replace("{title_rule}", title_rule)
+    return f"{system}{known}\n\nCurrent local time: {datetime.now().strftime('%A %Y-%m-%d %H:%M')}"
 
 
 NO_BRAIN_MSG = "I can't reach any of my brains right now. Check your internet connection, or start Ollama for offline use."
@@ -126,6 +131,8 @@ class Agent:
         self.turn_tools: set = set()    # tools actually called during the current request
         self.tool_schemas = tools.schemas(background=task_id is not None)
         self._last_extra: set = set()
+        self.on_first_tool = None       # callback(tool_name) just before the first tool of a turn runs (spoken "On it")
+        self._announced = False
         self.order = [b for b in config.BRAIN_ORDER
                       if (b == "claude" and client is not None) or (b == "groq" and config.GROQ_API_KEY)
                       or b == "ollama"]
@@ -169,6 +176,7 @@ class Agent:
 
     def run(self, user_text: str) -> str:
         self.turn_tools = set()
+        self._announced = False
         reply = self._run_brains(user_text)
         if self._false_claim(reply):  # said "saved/sent/set" but no such tool ran: never leave that standing
             reply = "I said I'd done that, but nothing was actually done. Shall I go ahead?"
@@ -186,6 +194,14 @@ class Agent:
                     return f"I {why} part-way through, so some steps may already be done. Please check, then ask again in a minute."
                 continue
         return NO_BRAIN_MSG
+
+    def _announce(self, name: str):
+        if self.on_first_tool is not None and not self._announced:
+            self._announced = True
+            try:
+                self.on_first_tool(name)
+            except Exception:
+                pass
 
     # ---- Anthropic
     def _run_claude(self, user_text: str) -> str:
@@ -212,6 +228,7 @@ class Agent:
             for b in resp.content:
                 if b.type == "tool_use":
                     self.turn_tools.add(b.name)
+                    self._announce(b.name)
                     out = tools.execute_tool(b.name, b.input, self.task_id)
                     results.append({"type": "tool_result", "tool_use_id": b.id, "content": out})
             self.messages.append({"role": "user", "content": results})
@@ -302,6 +319,7 @@ class Agent:
                 except ValueError:
                     args = {}
                 self.turn_tools.add(c["function"]["name"])
+                self._announce(c["function"]["name"])
                 out = tools.execute_tool(c["function"]["name"], args, self.task_id)
                 self.oa_messages.append({"role": "tool", "tool_call_id": c["id"], "content": out})
                 if len(calls) == 1 and c["function"]["name"] in TERMINAL_TOOLS and not out.startswith(("ERROR", "Blocked")):

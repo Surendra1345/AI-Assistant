@@ -86,7 +86,7 @@ class Voice:
     def followup_seconds(self) -> int:
         if config.FOLLOWUP_SECONDS >= 0:
             return config.FOLLOWUP_SECONDS
-        return 0 if self.using_speakers() else 10
+        return 20 if self.using_speakers() else 30   # a conversation stays open; "thanks" or silence closes it
 
     def _load_stt(self):
         if self._stt is None:
@@ -516,7 +516,7 @@ class Voice:
             pass
         return False
 
-    def speak(self, text: str, barge: bool = True):
+    def speak(self, text: str, barge: bool = True, settle: bool = True):
         clean = re.sub(r"https?://\S+", "link", text)
         clean = re.sub(r"[*#`_>]", "", clean)
         print(f"Assistant: {text}")
@@ -567,7 +567,7 @@ class Voice:
                     stream.close()
         self.last_spoken, self.spoke_end, self.speaking_text, self.speaking = clean, time.time(), "", False
         self.follow_until = time.time() + 15 if clean.rstrip().endswith("?") and barge else 0.0   # asked something: no wake word needed to answer
-        if not self.barged:
+        if not self.barged and settle:
             time.sleep(0.8 if self.using_speakers() else 0.4)   # let the room's echo die down before listening again
         self.last_active = time.time()
 

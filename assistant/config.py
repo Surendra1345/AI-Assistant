@@ -66,7 +66,7 @@ ELEVENLABS_VOICE_ID = os.environ.get("ELEVENLABS_VOICE_ID", "9375G6zswFk7v9bKTVQ
 ELEVENLABS_MODEL = os.environ.get("ELEVENLABS_MODEL", "eleven_flash_v2_5")            # fast, cheap (half price per character)
 ELEVENLABS_MONTHLY_CHARS = int(os.environ.get("ELEVENLABS_MONTHLY_CHARS", "9000"))    # stop using it past this (free plan = 10,000)
 TTS_RATE = int(os.environ.get("TTS_RATE", "170"))                 # macOS voice speed, words per minute
-FOLLOWUP_SECONDS = int(os.environ.get("FOLLOWUP_SECONDS", "-1"))   # accept replies without the wake word for N seconds after it speaks; -1 = auto (10 with headphones, 0 on speakers)
+FOLLOWUP_SECONDS = int(os.environ.get("FOLLOWUP_SECONDS", "-1"))   # keep the conversation open: accept requests without the wake word for N seconds after it speaks; -1 = auto (20 on speakers, 30 with headphones), 0 = always need the wake word
 TTS_VOICE = os.environ.get("TTS_VOICE", "Samantha")
 
 # Background tasks. Keep low on an 8 GB Air.
@@ -81,3 +81,8 @@ AUTO_APPROVE = {t.strip() for t in os.environ.get("AUTO_APPROVE_TOOLS", "").spli
 PROACTIVE = os.environ.get("PROACTIVE", "1") == "1"
 REMIND_LEAD_MIN = int(os.environ.get("REMIND_LEAD_MIN", "10"))   # warn this many minutes before a reminder is due
 BATTERY_WARN = int(os.environ.get("BATTERY_WARN", "20"))         # warn at this % (and again at 10% and 5%)
+
+# Personality ("Jarvis mode")
+ASSISTANT_NAME = os.environ.get("ASSISTANT_NAME", "Jarvis")
+USER_TITLE = os.environ.get("USER_TITLE", "")        # how it addresses you, e.g. "sir" or your first name; empty = rarely uses one
+ACK_SPOKEN = os.environ.get("ACK_SPOKEN", "1") == "1"  # say a short "On it" before slow work (searching, markets, code)

@@ -743,9 +743,9 @@ def test_speakers_turn_off_voice_interrupt_and_followups(monkeypatch):
     v = Voice()
     monkeypatch.setattr(config, "BARGE_IN", "auto"); monkeypatch.setattr(config, "FOLLOWUP_SECONDS", -1)
     monkeypatch.setattr(v, "_audio", lambda: NS(query_devices=lambda kind=None: {"name": "MacBook Air Speakers"}))
-    assert v.using_speakers() and not v.barge_enabled() and v.followup_seconds() == 0
+    assert v.using_speakers() and not v.barge_enabled() and v.followup_seconds() == 20
     monkeypatch.setattr(v, "_audio", lambda: NS(query_devices=lambda kind=None: {"name": "POCO Pods"}))
-    assert not v.using_speakers() and v.barge_enabled() and v.followup_seconds() == 10
+    assert not v.using_speakers() and v.barge_enabled() and v.followup_seconds() == 30
     monkeypatch.setattr(config, "BARGE_IN", "1"); monkeypatch.setattr(config, "FOLLOWUP_SECONDS", 5)
     monkeypatch.setattr(v, "_audio", lambda: NS(query_devices=lambda kind=None: {"name": "MacBook Air Speakers"}))
     assert v.barge_enabled() and v.followup_seconds() == 5              # explicit settings win
