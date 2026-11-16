@@ -200,6 +200,7 @@ class Voice:
         self.last_conf = sum(s.avg_logprob for s in good) / len(good) if good else -9.0
         return " ".join(s.text.strip() for s in good).strip()
 
+    _FILLER = re.compile(r"^\W*(oh|ah|uh|um|hmm+|wow|huh|whoa|ugh|oops|god)\b", re.I)   # remarks, not requests ("Oh, my God.")
     _JUNK = re.compile(r"^\W*(thank you|thanks|thanks for watching|you|bye|okay|ok|yeah|yes|no|hmm+|uh+|um+|so|the|oh|ah|hi|hello)\W*$", re.I)
 
     @staticmethod
@@ -224,8 +225,9 @@ class Voice:
 
     def _plausible_followup(self, text: str) -> bool:
         """Mid-conversation we accept speech without a wake word, so be strict: clear, real, more than a filler word."""
-        return (len(text.split()) >= 2 and self.last_conf > -0.8 and not self._JUNK.match(text)
-                and not self._is_echo(text))
+        words = text.split()
+        return (len(words) >= 2 and self.last_conf > -0.8 and not self._JUNK.match(text)
+                and not (len(words) <= 4 and self._FILLER.match(text)) and not self._is_echo(text))
 
     @staticmethod
     def after_wake(text: str):
@@ -516,9 +518,21 @@ class Voice:
             pass
         return False
 
+    _EMOJI = re.compile("[\U0001F000-\U0001FAFF\u2600-\u27BF\uFE0F\u200d\u2B50\u2B06\u2934\u3030]+")
+
+    @classmethod
+    def tts_clean(cls, text: str) -> str:
+        """Text as it should be SPOKEN: no links, e-mail addresses, emoji or list markers read out letter by letter."""
+        t = re.sub(r"https?://\S+", "link", text)
+        t = re.sub(r"\s*<[^<>\s]*@[^<>\s]*>", "", t)                       # "Priya <priya@x.com>" -> "Priya"
+        t = re.sub(r"#(\d+)\s*\[unread\]", r"Number \1, unread:", t)        # check_mail lines
+        t = re.sub(r"#(\d+)", r"Number \1", t)
+        t = cls._EMOJI.sub("", t)
+        t = re.sub(r"[*#`_>\[\]]", "", t)
+        return re.sub(r"[ \t]{2,}", " ", t).strip()
+
     def speak(self, text: str, barge: bool = True, settle: bool = True):
-        clean = re.sub(r"https?://\S+", "link", text)
-        clean = re.sub(r"[*#`_>]", "", clean)
+        clean = self.tts_clean(text)
         print(f"Assistant: {text}")
         self._start_ptt()
         with self._speak_lock:

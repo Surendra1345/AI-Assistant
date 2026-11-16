@@ -569,6 +569,9 @@ def check_mail(count: int = 5) -> str:
         if len(parts) < 4:
             continue
         idx, is_read, sender, subject = parts
+        sender = re.sub(r"\s*<[^>]*>", "", sender).strip().strip('"') or sender   # name only, not the address
+        subject = re.sub(r"[\U0001F000-\U0001FAFF\u2600-\u27BF\uFE0F\u200d]+", "", subject)   # emoji
+        subject = re.sub(r"\s{2,}", " ", subject).strip()
         if _SENSITIVE_MAIL.search(subject) or _SENSITIVE_MAIL.search(sender) or guard.contains_secret(subject):
             subject, sender = "(hidden for privacy)", "(hidden)"
         out.append(f"#{idx} {'' if is_read == 'true' else '[unread] '}{sender}: {subject}")
