@@ -37,6 +37,7 @@ class Voice:
         self.last_spoken = ""    # what we last said out loud (to recognise our own voice coming back through the mic)
         self.spoke_end = 0.0
         self.speaking_text = ""  # what we are saying right now (to recognise our own voice in the mic)
+        self.follow_until = 0.0  # after a question from us: accept the answer without the wake word until then
         self.last_conf = 0.0     # Whisper's confidence in the last transcript (avg log-prob)
 
     # ---- lazy loading keeps startup fast and memory low
@@ -90,7 +91,13 @@ class Voice:
     def _load_stt(self):
         if self._stt is None:
             from faster_whisper import WhisperModel
-            self._stt = None  # note: faster-whisper (CTranslate2) has no Apple GPU backend, so it always runs on CPU
+            self._stt = None
+            if config.WHISPER_DEVICE in ("auto", "mps"):  # newer CTranslate2 has an (experimental) Apple GPU backend
+                try:
+                    self._stt = WhisperModel(config.WHISPER_MODEL, device="mps", compute_type="float16")
+                    self._stt_dev = "mps"
+                except Exception:
+                    self._stt = None                      # older build: use the CPU (transcribe() also falls back if the GPU errors)
             if self._stt is None:
                 self._stt = WhisperModel(config.WHISPER_MODEL, device="cpu", compute_type="int8")
                 self._stt_dev = "cpu"
@@ -264,7 +271,7 @@ class Voice:
                 self.ptt_until = 0.0
                 rest = self.after_wake(text)
                 return rest if rest else text
-            if time.time() - self.last_active < self.followup_seconds():   # mid-conversation: no wake word needed
+            if time.time() < self.follow_until or time.time() - self.last_active < self.followup_seconds():   # mid-conversation: no wake word needed
                 if self._plausible_followup(text):
                     self.last_active = time.time()
                     return text
@@ -300,6 +307,12 @@ class Voice:
     def listen(self) -> str:
         if self.barged:
             return self._listen_after_barge()
+        if config.WAKE_MODE != "whisper" and time.time() < self.follow_until:   # we just asked a question: hear the answer
+            text = self.transcribe(self.record(first_word_timeout=6, min_threshold=0.006))
+            if text and self._plausible_followup(text):
+                self.last_active = time.time()
+                return text
+            self.follow_until = 0.0
         if config.WAKE_MODE == "whisper":
             return self._listen_whisper()
         self.wait_for_wake()
@@ -315,7 +328,7 @@ class Voice:
 
     def listen_now(self) -> str:
         """Record immediately, no wake word (used for yes/no approvals)."""
-        return self.transcribe(self.record(max_seconds=8, first_word_timeout=8))
+        return self.transcribe(self.record(max_seconds=8, first_word_timeout=8), prompt="Yes. No. Yes, approve. No, deny.")
 
     # ---- speaking
     def _piper_voice(self):
@@ -553,6 +566,7 @@ class Voice:
                     stream.stop()
                     stream.close()
         self.last_spoken, self.spoke_end, self.speaking_text, self.speaking = clean, time.time(), "", False
+        self.follow_until = time.time() + 15 if clean.rstrip().endswith("?") and barge else 0.0   # asked something: no wake word needed to answer
         if not self.barged:
             time.sleep(0.8 if self.using_speakers() else 0.4)   # let the room's echo die down before listening again
         self.last_active = time.time()

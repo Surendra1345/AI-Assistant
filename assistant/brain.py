@@ -69,7 +69,7 @@ class _ToolFormat(Exception):
 # tokens against the rate limit.
 TERMINAL_TOOLS = {"add_todo", "complete_todo", "remember", "forget", "open_app", "open_url", "set_volume", "get_time",
                   "list_todos", "list_memories", "list_notes", "list_background_tasks", "cancel_task",
-                  "resolve_approval", "list_pending_approvals", "active_window", "check_mail", "open_file", "email_me", "calculate"}
+                  "resolve_approval", "list_pending_approvals", "active_window", "check_mail", "open_file", "email_me", "calculate", "quit_app", "music_control"}
 
 _COOLDOWN: dict = {}   # model -> time.time() until which it is rate limited
 
@@ -96,6 +96,26 @@ def _openai_tools(schemas: list) -> list:
     return out
 
 
+# Groq's free tier allows ~8000 tokens a minute and all 43 tool descriptions cost ~3000 of them on every model call, so the
+# OpenAI-style brains get the everyday tools plus only the groups the request seems to need (and the previous turn's, so
+# "send it to him" still works). Claude gets everything.
+_CORE_TOOLS = {"get_time", "add_todo", "list_todos", "complete_todo", "remember", "open_app", "open_file", "find_files",
+               "read_file", "web_search", "fetch_page", "news_search", "calculate", "save_note", "email_me", "draft_email",
+               "start_background_task"}
+_TOOL_GROUPS = [
+    (re.compile(r"stock|share|market|invest|trad|nifty|sensex|nasdaq|crypto|price|compan|earn|profit", re.I),
+     {"stock_quote", "market_movers", "investment_scenario"}),
+    (re.compile(r"mail|inbox|send|reply", re.I), {"check_mail", "read_email", "send_email"}),
+    (re.compile(r"code|script|python|bash|program|run |write|file|folder", re.I), {"run_code", "write_file", "list_dir"}),
+    (re.compile(r"organi[sz]e|sort|clean|tidy|downloads|undo", re.I), {"organize_plan", "organize_apply", "organize_undo", "list_dir"}),
+    (re.compile(r"task|background|approv|deny|pending|cancel", re.I),
+     {"list_background_tasks", "get_task_result", "cancel_task", "list_pending_approvals", "resolve_approval"}),
+    (re.compile(r"note|memor|forget|remember", re.I), {"list_notes", "read_note", "list_memories", "forget"}),
+    (re.compile(r"volume|window|screen|music|song|spotify|play|pause|quit|close|url|website|link|brief|what.s up", re.I),
+     {"set_volume", "list_windows", "active_window", "music_control", "quit_app", "open_url", "get_briefing"}),
+]
+
+
 class Agent:
     def __init__(self, client, task_id: Optional[int] = None, cancel: Optional[threading.Event] = None):
         self.client = client            # Anthropic client or None
@@ -105,9 +125,22 @@ class Agent:
         self.oa_messages: list = []     # OpenAI-format history (Groq)
         self.turn_tools: set = set()    # tools actually called during the current request
         self.tool_schemas = tools.schemas(background=task_id is not None)
+        self._last_extra: set = set()
         self.order = [b for b in config.BRAIN_ORDER
                       if (b == "claude" and client is not None) or (b == "groq" and config.GROQ_API_KEY)
                       or b == "ollama"]
+
+    def _tools_for(self, user_text: str) -> list:
+        """The tool list to send to a small-context brain for this request (see _CORE_TOOLS)."""
+        if self.task_id is not None:               # background tasks may need anything: send the lot
+            return self.tool_schemas
+        extra = set()
+        for pat, names in _TOOL_GROUPS:
+            if pat.search(user_text):
+                extra |= names
+        keep = _CORE_TOOLS | extra | self._last_extra
+        self._last_extra = extra
+        return [t for t in self.tool_schemas if t["name"] in keep]
 
     @staticmethod
     def _trim(msgs: list):
@@ -236,7 +269,7 @@ class Agent:
         self._trim(self.oa_messages)
         start = len(self.oa_messages)
         self.oa_messages.append({"role": "user", "content": user_text})
-        oa_tools = _openai_tools(self.tool_schemas)
+        oa_tools = _openai_tools(self._tools_for(user_text))
         fmt_errors = 0
         for _ in range(config.MAX_STEPS):
             if self.cancel is not None and self.cancel.is_set():
