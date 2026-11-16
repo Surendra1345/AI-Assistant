@@ -137,17 +137,24 @@ def read_note(name: str) -> str:
 def _norm_due(due: Optional[str]) -> Optional[str]:
     if not due:
         return None
-    d = datetime.fromisoformat(due)  # model supplies local ISO time, e.g. 2026-11-12T09:00
+    try:
+        d = datetime.fromisoformat(due)  # model supplies local ISO time, e.g. 2026-11-12T09:00
+    except ValueError:
+        raise ValueError(f"due '{due}' isn't a date. Use local ISO time like 2026-11-12T09:00, worked out from the current time.")
     return d.strftime("%Y-%m-%dT%H:%M")
 
 
 @tool("add_todo", "Add a to-do or timed reminder. If `due` is given the assistant will speak/notify at that time. "
                   "`due` must be local time in ISO format, e.g. 2026-11-12T09:00.",
-      {"title": {"type": "string"}, "due": {"type": "string", "description": "optional local ISO datetime"}}, ["title"])
-def add_todo(title: str, due: Optional[str] = None) -> str:
-    tid = store.execute("INSERT INTO todos (title, due, created) VALUES (?,?,?)",
-                        (title, _norm_due(due), datetime.now().isoformat(timespec="seconds")))
-    return f"Added #{tid}: {title}" + (f" (due {_norm_due(due)})" if due else "")
+      {"title": {"type": "string"}, "due": {"type": "string", "description": "optional local ISO datetime"},
+       "repeat": {"type": "string", "enum": ["daily", "weekdays", "weekly", "monthly"],
+                  "description": "optional: repeat the reminder ('every day at 9' = daily, needs due)"}}, ["title"])
+def add_todo(title: str, due: Optional[str] = None, repeat: Optional[str] = None) -> str:
+    if repeat and not due:
+        raise ValueError("A repeating reminder needs a first due time.")
+    tid = store.execute("INSERT INTO todos (title, due, created, repeat) VALUES (?,?,?,?)",
+                        (title, _norm_due(due), datetime.now().isoformat(timespec="seconds"), repeat or None))
+    return f"Added #{tid}: {title}" + (f" (due {_norm_due(due)}" + (f", repeats {repeat}" if repeat else "") + ")" if due else "")
 
 
 @tool("list_todos", "List open to-dos (and reminders) with due times.",
@@ -156,11 +163,13 @@ def list_todos(include_done: bool = False) -> str:
     rows = store.query("SELECT * FROM todos" + ("" if include_done else " WHERE done=0") + " ORDER BY due IS NULL, due, id")
     if not rows:
         return "Nothing on the list."
-    return "\n".join(f"#{r['id']} {'[done] ' if r['done'] else ''}{r['title']}" + (f" — due {r['due']}" if r['due'] else "") for r in rows)
+    return "\n".join(f"#{r['id']} {'[done] ' if r['done'] else ''}{r['title']}" + (f" — due {r['due']}" if r['due'] else "") + (f" (repeats {r['repeat']})" if r['repeat'] else "") for r in rows)
 
 
 @tool("complete_todo", "Mark a to-do done by its number.", {"todo_id": {"type": "integer"}}, ["todo_id"])
 def complete_todo(todo_id: int) -> str:
+    if not store.query("SELECT 1 FROM todos WHERE id=?", (todo_id,)):
+        return f"There's no to-do #{todo_id}."
     store.execute("UPDATE todos SET done=1 WHERE id=?", (todo_id,))
     return f"Marked #{todo_id} done."
 
@@ -177,6 +186,8 @@ def remember(fact: str) -> str:
 
 @tool("forget", "Delete a remembered fact by its number (see list_memories).", {"memory_id": {"type": "integer"}}, ["memory_id"])
 def forget(memory_id: int) -> str:
+    if not store.query("SELECT 1 FROM memories WHERE id=?", (memory_id,)):
+        return f"There's no memory #{memory_id}."
     store.execute("DELETE FROM memories WHERE id=?", (memory_id,))
     return f"Forgot #{memory_id}."
 
@@ -692,7 +703,7 @@ def run_code(language: str, code: str) -> str:
     guard.check_code(code)
     config.WORKSPACE.mkdir(parents=True, exist_ok=True)
     ext, cmd = (".py", sys.executable) if language == "python" else (".sh", "bash")
-    script = config.WORKSPACE / f"run_{int(time.time())}{ext}"
+    script = config.WORKSPACE / f"run_{time.time_ns()}{ext}"
     script.write_text(code)
     try:
         r = subprocess.run([cmd, str(script)], cwd=config.WORKSPACE, capture_output=True, text=True, timeout=60, env=guard.safe_env())

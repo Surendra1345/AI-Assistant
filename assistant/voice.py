@@ -559,8 +559,12 @@ class Voice:
 
     def confirm(self, description: str) -> bool:
         """Spoken yes/no approval."""
+        first = description.split("\n", 1)[0]
+        spoken = first if len(first) <= 140 and "\n" not in description else first[:100].rsplit(" ", 1)[0] + ", the details are on screen"
+        if "\n" in description or len(description) > 140:
+            print(f"\n  APPROVAL NEEDED:\n  {description}\n")     # long text (code, email body) is shown, not read out
         for _ in range(2):
-            self.speak(f"I need your approval to {description}. Say yes or no.", barge=False)
+            self.speak(f"I need your approval to {spoken}. Say yes or no.", barge=False)
             heard = self.listen_now().lower()
             print(f"(heard: {heard!r})")
             if re.search(r"\b(yes|yeah|yep|approve|go ahead|do it|sure|okay)\b", heard):

@@ -54,12 +54,37 @@ class TaskManager:
                 self._set(tid, "cancelled", result)
                 return
             self._set(tid, "done", result)
+            self._cancels.pop(tid, None)
             self._notify(f"Task {tid} finished", result[:300])
             store.execute("INSERT OR IGNORE INTO reported (task_id) VALUES (?)", (tid,))
         except Exception as e:
+            self._cancels.pop(tid, None)
             self._set(tid, "failed", f"{type(e).__name__}: {e}")
             self._notify(f"Task {tid} failed", str(e)[:200])
             store.execute("INSERT OR IGNORE INTO reported (task_id) VALUES (?)", (tid,))
+
+
+def next_due(due: str, repeat: str, now: datetime = None) -> str:
+    """Next occurrence of a repeating reminder that is after `now`."""
+    now = now or datetime.now()
+    d = datetime.strptime(due, "%Y-%m-%dT%H:%M")
+    while d <= now:
+        if repeat == "weekly":
+            d += timedelta(days=7)
+        elif repeat == "monthly":
+            y, m = (d.year + (d.month == 12), d.month % 12 + 1)
+            day = d.day
+            while True:
+                try:
+                    d = d.replace(year=y, month=m, day=day)
+                    break
+                except ValueError:
+                    day -= 1          # 31st -> last day of a shorter month
+        else:
+            d += timedelta(days=1)
+            while repeat == "weekdays" and d.weekday() >= 5:
+                d += timedelta(days=1)
+    return d.strftime("%Y-%m-%dT%H:%M")
 
 
 class ReminderScheduler(threading.Thread):
@@ -74,7 +99,11 @@ class ReminderScheduler(threading.Thread):
     def check_once(self):
         now = datetime.now().strftime("%Y-%m-%dT%H:%M")
         for r in store.query("SELECT * FROM todos WHERE done=0 AND notified=0 AND due IS NOT NULL AND due<=?", (now,)):
-            store.execute("UPDATE todos SET notified=1 WHERE id=?", (r["id"],))
+            if r.get("repeat"):   # schedule the next one instead of finishing
+                store.execute("UPDATE todos SET due=?, notified=0, pre_notified=0 WHERE id=?",
+                              (next_due(r["due"], r["repeat"]), r["id"]))
+            else:
+                store.execute("UPDATE todos SET notified=1 WHERE id=?", (r["id"],))
             self._notify("Reminder", r["title"])
 
     def run(self):

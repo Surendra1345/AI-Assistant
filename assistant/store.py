@@ -46,6 +46,9 @@ def _conn():
     if "pre_notified" not in {r["name"] for r in c.execute("PRAGMA table_info(todos)")}:
         c.execute("ALTER TABLE todos ADD COLUMN pre_notified INTEGER NOT NULL DEFAULT 0")  # heads-up before due time
         c.commit()
+    if "repeat" not in {r["name"] for r in c.execute("PRAGMA table_info(todos)")}:
+        c.execute("ALTER TABLE todos ADD COLUMN repeat TEXT")  # daily / weekdays / weekly / monthly
+        c.commit()
     return c
 
 
