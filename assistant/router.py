@@ -7,6 +7,12 @@ from . import tools
 
 _APP = re.compile(r"^\W*(?:please\s+)?(?:open|launch|start)\s+(?!(?:a|an|the|my)\s+(?:file|folder|email|note)\b)([\w .+&-]{2,40}?)\W*$", re.I)
 _FILE = re.compile(r"^\W*(?:please\s+)?(?:open|show|pull up)\s+(?:me\s+)?(?:the\s+|my\s+)?(?:file\s+)?([\w .'&-]{2,60}?)\s+(?:file\s+)?(?:(?:in|on|from)\s+(?:my\s+|the\s+)?(downloads|desktop|documents)(?:\s+folder)?)\W*$", re.I)
+_QUIT = re.compile(r"^\W*(?:please\s+)?(?:close|quit)\s+(?!(?:it|this|that|the\s+window|window|tab|file|folder)\b)(?:the\s+)?([\w .+&-]{2,40}?)(?:\s+app)?\W*$", re.I)
+_PLAY = re.compile(r"^\W*(?:please\s+)?(?:play|resume|start)(?:\s+(?:the\s+|some\s+|my\s+)?(?:music|song|songs|spotify))?\W*$", re.I)
+_PAUSE = re.compile(r"^\W*(?:please\s+)?(?:pause|stop)(?:\s+(?:the\s+|my\s+)?(?:music|song|songs|spotify|playing))?\W*$|^\W*pause\W*$", re.I)
+_NEXT = re.compile(r"^\W*(?:please\s+)?(?:next|skip)(?:\s+(?:the\s+)?(?:song|track))?\W*$|^\W*play\s+(?:the\s+)?next\s+(?:song|track)\W*$", re.I)
+_PREV = re.compile(r"^\W*(?:please\s+)?(?:previous|go\s+back)(?:\s+(?:song|track))?\W*$|^\W*play\s+(?:the\s+)?previous\s+(?:song|track)\W*$", re.I)
+_NOWPLAYING = re.compile(r"^\W*(?:what(?:'s| is)\s+(?:this\s+song|playing|currently\s+playing|the\s+song)|what\s+song\s+is\s+(?:this|playing))\W*$", re.I)
 _VOL = re.compile(r"^\W*(?:set\s+)?(?:the\s+)?volume\s+(?:to\s+)?(\d{1,3})\W*(?:percent|%)?\W*$", re.I)
 _TIME = re.compile(r"^\W*what(?:'s| is)?\s+the\s+(?:time|date)\W*$|^\W*what\s+time\s+is\s+it\W*$", re.I)
 _LIST = re.compile(r"^\W*(?:what(?:'s| is)\s+on\s+my\s+(?:list|to-?do\s*list)|(?:show|read)\s+(?:me\s+)?my\s+(?:to-?dos?|list))\W*$", re.I)
@@ -38,6 +44,21 @@ def route(text: str) -> Optional[str]:
             return tools.list_windows()
         if m := _DONE.match(text):
             return tools.complete_todo(int(m.group(1)))
+        if _NEXT.match(text):
+            return tools.music_control("next")
+        if _PREV.match(text):
+            return tools.music_control("previous")
+        if _NOWPLAYING.match(text):
+            return tools.music_control("status")
+        if _PLAY.match(text):
+            return tools.music_control("play")
+        if _PAUSE.match(text):
+            return tools.music_control("pause")
+        if m := _QUIT.match(text):
+            try:
+                return tools.quit_app(m.group(1).strip())
+            except Exception:
+                return None      # "close the door": not an app, let the agent decide
         if m := _FILE.match(text):
             return tools.open_file(m.group(1).strip(), m.group(2))
         if m := _APP.match(text):

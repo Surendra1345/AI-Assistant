@@ -213,6 +213,45 @@ def open_app(name: str) -> str:
     return f"Opened {name}."
 
 
+@tool("quit_app", "Quit (close) a running Mac app by name, e.g. Spotify. Apps with unsaved work ask the user to save first.",
+      {"name": {"type": "string"}}, ["name"])
+def quit_app(name: str) -> str:
+    out = macos.osascript("on run argv\n set n to item 1 of argv\n tell application \"System Events\" to set up to ((name of processes) contains n)\n"
+                          " if not up then return \"not running\"\n tell application n to quit\n return \"ok\"\nend run", name.strip())
+    return f"{name} isn't running." if out == "not running" else f"Closed {name}."
+
+
+_MEDIA_ACTIONS = {"play": "play", "pause": "pause", "toggle": "playpause", "next": "next track", "previous": "previous track"}
+
+
+def _media_app(app: Optional[str]) -> str:
+    """Spotify or Music: the one the user named, else whichever is running, else Spotify."""
+    if app and app.strip().lower() in ("music", "apple music", "itunes"):
+        return "Music"
+    if app and app.strip().lower() == "spotify":
+        return "Spotify"
+    running = macos.osascript('tell application "System Events" to return (name of processes) as text')
+    return "Music" if "Music" in running and "Spotify" not in running else "Spotify"
+
+
+@tool("music_control", "Control music playback in Spotify or Apple Music: play, pause, toggle, next, previous, or status (what's playing). "
+                       "It cannot search for or pick a specific song.",
+      {"action": {"type": "string", "enum": ["play", "pause", "toggle", "next", "previous", "status"]},
+       "app": {"type": "string", "description": "optional: Spotify or Music (default: whichever is running)"}}, ["action"])
+def music_control(action: str, app: Optional[str] = None) -> str:
+    action = action.lower().strip()
+    if action != "status" and action not in _MEDIA_ACTIONS:
+        raise ValueError("action must be play, pause, toggle, next, previous or status")
+    name = _media_app(app)                      # only ever "Spotify" or "Music", so the script below is safe to format
+    if action == "status":
+        out = macos.osascript(f'tell application "{name}"\n if player state is stopped then return "Nothing is playing."\n'
+                              f' return (name of current track) & " by " & (artist of current track) & " (" & (player state as text) & ")"\nend tell')
+        return out
+    macos.osascript(f'tell application "{name}" to {_MEDIA_ACTIONS[action]}')
+    return {"play": f"Playing in {name}.", "pause": "Paused.", "toggle": "Toggled playback.",
+            "next": "Next track.", "previous": "Previous track."}[action]
+
+
 @tool("open_url", "Open a web address in the default browser.", {"url": {"type": "string"}}, ["url"])
 def open_url(url: str) -> str:
     if not url.startswith(("http://", "https://")):
