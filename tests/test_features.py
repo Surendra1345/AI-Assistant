@@ -51,7 +51,8 @@ def test_router_ignores_complex_requests():
 
 def test_router_todo_done():
     tid = store.execute("INSERT INTO todos (title, created) VALUES ('x','now')")
-    assert any(w in router.route(f"mark {tid} done.").lower() for w in ("done", "ticked", "complete"))
+    said = router.route(f"mark {tid} done.")
+    assert any(w in said.lower() for w in ("done", "ticked", "complete")), said
     assert store.query("SELECT done FROM todos WHERE id=?", (tid,))[0]["done"] == 1
 
 
@@ -212,7 +213,7 @@ def test_groq_tool_loop_and_null_args(monkeypatch):
 
 def test_groq_bad_json_arguments_do_not_crash(monkeypatch):
     bad = {"id": "c1", "type": "function", "function": {"name": "list_todos", "arguments": "{not json"}}
-    a = groq_agent(monkeypatch, [msg(calls=[bad])])
+    a = groq_agent(monkeypatch, [msg(calls=[bad]), msg("Your list is clear.")])   # look-ups go back to the model
     assert "clear" in a.run("what's on my list")
 
 
