@@ -336,7 +336,8 @@ class Voice:
             print("(heard wake word, listening...)")
             subprocess.run(["afplay", "/System/Library/Sounds/Tink.aiff"]) if macos.IS_MAC else None
             time.sleep(0.25)
-            return self.transcribe(self.record())
+            text, self.last_conf = self.transcribe(self.record())
+            return text
 
     def _listen_after_barge(self) -> str:
         """The user talked over the assistant: keep recording what they were saying (no wake word needed)."""
@@ -357,7 +358,7 @@ class Voice:
         if self.barged:
             return self._listen_after_barge()
         if config.WAKE_MODE != "whisper" and time.time() < self.follow_until:   # we just asked a question: hear the answer
-            text = self.transcribe(self.record(first_word_timeout=6, min_threshold=0.006))
+            text, self.last_conf = self.transcribe(self.record(first_word_timeout=6, min_threshold=0.006))
             if text and self._plausible_followup(text):
                 self.last_active = time.time()
                 return text
@@ -556,7 +557,7 @@ class Voice:
             quiet = 0.0 if rms > max(0.012, 0.35 * peak) else quiet + 0.1
             if quiet >= 0.6 and len(audio) >= 12:
                 break
-        text = self.transcribe(np.concatenate(audio))
+        text, _ = self.transcribe(np.concatenate(audio))
         own_voice = bool(text) and self._echo_of(text, self.speaking_text)
         if own_voice:                                      # we heard ourselves: be less jumpy for the rest of this message
             st["boost"] = min(st.get("boost", 1.0) * 1.6, 6.0)

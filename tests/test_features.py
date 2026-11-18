@@ -346,7 +346,7 @@ def test_quick_approval_with_punctuation_and_stop_words():
     ap = Approvals(lambda *a: None)
     assert main.QUICK_APPROVAL.match("Approve 3.").groups() == ("Approve", "3")
     assert main.QUICK_APPROVAL.match("deny #12!")
-    agent = NS(run=lambda t: "AGENT")
+    agent = NS(run=lambda t, confidence=1.0: "AGENT")
     assert main.handle(agent, ap, "stop") == "" and main.handle(agent, ap, "Never mind.") == ""
     assert main.handle(agent, ap, "approve 99") == "There's no pending approval with that number."
     assert main.handle(agent, ap, "tell me a story") == "AGENT"
@@ -393,7 +393,7 @@ def _st():
 def test_barge_in_pauses_listens_then_stops_for_a_real_user(signals):
     import signal
     v = Voice()
-    v.transcribe, v.last_conf = (lambda a: "stop talking"), -0.2
+    v.transcribe, v.last_conf = (lambda a: ("stop talking", -0.2)), -0.2
     p = _Proc()
     assert v._wait(p, _Stream(p, [_blk(0.02)] * 15 + [_blk(0.12)] * 10), _st()) is True
     assert p.dead and v.barge_text == "stop talking"
@@ -403,7 +403,7 @@ def test_barge_in_pauses_listens_then_stops_for_a_real_user(signals):
 def test_barge_in_false_alarm_resumes_the_sentence(signals):
     import signal
     v = Voice()
-    v.transcribe, v.last_conf = (lambda a: ""), -9.0                       # it was just noise
+    v.transcribe, v.last_conf = (lambda a: ("", -9.0)), -9.0               # it was just noise
     p = _Proc()
     assert v._wait(p, _Stream(p, [_blk(0.02)] * 15 + [_blk(0.12)] * 5), _st()) is False
     assert not p.dead and signals[0] == signal.SIGSTOP and signals[-1] == signal.SIGCONT   # nothing cut off
@@ -418,7 +418,7 @@ def test_its_own_voice_never_triggers_a_pause(signals):
 
 def test_barge_in_with_known_waveform_catches_a_short_word_in_a_pause(signals):
     v = Voice()
-    v.transcribe, v.last_conf = (lambda a: "stop"), -0.2
+    v.transcribe, v.last_conf = (lambda a: ("stop", -0.2)), -0.2
     env = np.array([0.1] * 12 + [0.0] * 4 + [0.1] * 12)       # speech, a pause, speech
     p = _Proc(40)
     mic = [_blk(0.02)] * 12 + [_blk(0.001)] * 1 + [_blk(0.09)] * 4 + [_blk(0.02)] * 12     # user says "stop" in the pause
@@ -516,8 +516,9 @@ def test_main_loop_survives_audio_errors(monkeypatch):
     import assistant.voice as voicemod
     monkeypatch.setattr(voicemod, "Voice", V)
     monkeypatch.setattr(main.time, "sleep", lambda s: None)
-    monkeypatch.setattr(main, "build", lambda voice=None: (NS(run=lambda t: "x"), Approvals(lambda *a: None)))
+    monkeypatch.setattr(main, "build", lambda voice=None: (NS(run=lambda t, confidence=1.0: "x"), Approvals(lambda *a: None)))
     monkeypatch.setattr(main, "greet", lambda v=None: None)
+    monkeypatch.setattr(main, "HealthCheck", lambda: NS(check_all=lambda: True, report=lambda: None))
     monkeypatch.setattr("sys.argv", ["assistant"])
     with pytest.raises(SystemExit):
         main.main()
@@ -643,7 +644,7 @@ def test_enter_key_skips_the_wake_word(monkeypatch):
     v._ptt_thread = object()                       # don't start the stdin thread in tests
     v.ptt_until = __import__("time").time() + 5
     monkeypatch.setattr(v, "record", lambda **k: np.zeros(16000, "float32"))
-    monkeypatch.setattr(v, "transcribe", lambda a, prompt=None: "check my resume")
+    monkeypatch.setattr(v, "transcribe", lambda a, prompt=None: ("check my resume", -0.1))
     assert v._listen_whisper() == "check my resume" and v.ptt_until == 0.0
 
 
@@ -733,7 +734,7 @@ def test_hearing_itself_resumes_speech_and_becomes_less_jumpy(signals):
     import signal
     v = Voice()
     v.speaking_text = "Good afternoon. Nothing urgent today."
-    v.transcribe, v.last_conf = (lambda a: "Good after."), -0.2          # the mic caught our own greeting
+    v.transcribe, v.last_conf = (lambda a: ("Good after.", -0.2)), -0.2  # the mic caught our own greeting
     p = _Proc(); st = _st()
     assert v._wait(p, _Stream(p, [_blk(0.02)] * 15 + [_blk(0.12)] * 5), st) is False
     assert not p.dead and signals[-1] == signal.SIGCONT and st["boost"] > 1.0
