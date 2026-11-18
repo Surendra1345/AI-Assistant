@@ -308,8 +308,15 @@ class Voice:
             self.visualizer.set_mode("listening")
         while True:
             wake = config.WAKE_WORD.split("_")[-1].capitalize()
+            # Only bias Whisper toward the wake word when we're actually waiting for it cold.
+            # Mid-conversation (follow-up window) or right after pressing Enter (push-to-talk),
+            # the user is just talking naturally - biasing toward "Hey Jarvis" there measurably
+            # hurts accuracy on unrelated phrases ("open wipro openings" -> "It's been a long time").
+            expecting_wake = not (time.time() < self.ptt_until or time.time() < self.follow_until
+                                   or time.time() - self.last_active < self.followup_seconds())
+            prompt = f"Hey {wake}. {wake}, what time is it?" if expecting_wake else None
             audio = self.record(max_seconds=config.MAX_REQUEST_SECONDS, silence_seconds=config.PAUSE_SECONDS, first_word_timeout=10, min_threshold=0.006)
-            text, conf = self.transcribe(audio, prompt=f"Hey {wake}. {wake}, what time is it?")  # biases Whisper toward the wake word
+            text, conf = self.transcribe(audio, prompt=prompt)
             log = logging.getLogger("voice")
             log.debug(f"heard {repr(text)} (confidence {conf:.2f})")
             if config.WAKE_DEBUG and (len(audio) or self.last_rms > 0.003):
