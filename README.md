@@ -1,28 +1,27 @@
-# Mac Assistant
+# Mac Assistant ("Jarvis")
 
-A private, voice-driven personal assistant for your MacBook. It does what you tell it, including long jobs in the background.
+A private, voice-driven personal assistant for your Mac, in the spirit of Tony Stark's JARVIS: calm, capable, briefly witty, and it acts on your behalf with 46 tools — mail, files, notes, reminders, research, markets, code, apps, music.
 
-**Local on your Mac:** wake word, speech-to-text (Whisper), speech output (macOS `say`), files, notes, reminders.
-**Cloud:** only the *text* of your requests and tool results goes to Claude for planning. Your audio never leaves the Mac.
-**Offline fallback:** plain chat via a small Ollama model (no tools).
+**Local on your Mac:** wake word, speech-to-text (Whisper), speech output (Piper / ElevenLabs / macOS `say`), files, notes, reminders.
+**Cloud:** only the *text* of your requests and tool results goes to Claude (or Groq) for planning. Your audio never leaves the Mac.
+**Offline fallback:** a local Ollama model when there's no internet or no API key — plain chat, no tools.
 
-## Install (M1 Air, 8 GB)
+## Install
 
-1. Install Python and Ollama (optional, for the offline fallback):
-   `brew install python@3.12` and, if you want offline chat, install Ollama then `ollama pull llama3.2:3b`
+1. `brew install python@3.12`, and optionally Ollama for offline fallback: `ollama pull llama3.2:3b`
 2. In this folder: `bash setup.sh`
-3. Open `.env` and paste your `ANTHROPIC_API_KEY`.
+3. Open `.env` and set `ANTHROPIC_API_KEY` and/or `GROQ_API_KEY` (Groq has a free tier; without either, it falls back to Ollama only).
 4. Test by typing first: `source .venv/bin/activate && python -m assistant --text`
-5. Then voice: `python -m assistant`. Allow Microphone access for Terminal when macOS asks.
-   For a first voice test set `WAKE_MODE=enter` in `.env` (press Enter, then speak). Switch to `wakeword` after.
+5. Then voice: `python -m assistant`. Allow Microphone access when macOS asks, and Mail/Automation access the first time it checks email.
 
-First time you use email, macOS asks to let Terminal control Mail. Click OK.
+On startup it runs a health check (microphone, API key, Mail permission, Whisper model, Ollama) and tells you exactly what to fix if something's missing, instead of failing silently later.
 
 ## What you can say
 
 | Say | What happens |
 |---|---|
 | "Research how solid-state batteries work and summarize it" | Several searches, reads pages, saves a note, tells you the summary |
+| "Check my mail from the last 10 days for job replies" | Searches across that range, reads the relevant ones, can save a dated note |
 | "In the background, compare the top 3 note-taking apps" | Starts task #N, keeps listening, notifies and speaks when done |
 | "Organize my Downloads folder" | Shows a plan (nothing moves), asks approval, moves files, can undo |
 | "Draft an email to Priya about Friday's meeting" | Opens a draft in Mail for you to review |
@@ -30,38 +29,75 @@ First time you use email, macOS asks to let Terminal control Mail. Click OK.
 | "Remind me to call the bank tomorrow at 10" | Saved, then spoken + notification at that time |
 | "What's the latest in AI today?" | Searches fresh news (last day), reads the best article, summarises with dates |
 | "What's 12% of 48,000?" / "50000 at 8% for 10 years" | Exact calculator, no guessing |
-| "Which US (or Indian) company is going up today?" | Scans ~20 large companies, lists top risers and fallers |
+| "Which company is going up today?" | Scans large companies, lists top risers and fallers |
 | "If I put 50,000 in Tesla, would I earn?" | Real price history: what it would be worth, biggest drop, risk. Data only, never a guarantee |
+| "Play some music" / "pause" / "skip" | Controls the Music app |
 | "What's on my list?" / "Mark 3 done" | To-do tracker |
 | "Write a script that renames my photos by date and run it" | Writes code, shows it, asks approval, runs it, reports output |
 | "How's task 2 going?" / "Cancel task 2" | Status / cancel |
 | "approve 3" / "deny 3" | Answers an approval a background task is waiting on |
+
+Mid-conversation, you don't need to repeat the wake word for follow-ups ("and bread", "make it 4pm instead"). Pressing Enter also skips the wake word for one request.
+
+## Reliability features
+
+- **Startup health check** (`assistant/health.py`): checks the microphone, API keys, Mail permission, Whisper model, and Ollama before the voice loop starts, with actionable fixes for anything missing.
+- **Error logging** (`assistant/logging_config.py`): every request, tool call, and failure is logged to `~/Assistant/assistant.log` for after-the-fact diagnosis. Console only shows warnings/errors; the file has the full detail.
+- **Confidence-aware clarification**: Whisper's own confidence score comes along with every transcript. On merely imperfect but understandable speech, nothing changes. On genuinely very low confidence, the model is told to ask a short clarifying question with its best guess — the same judgment it already uses for garbled requests — rather than a hard-coded "did you mean that?" interrupting normal conversation.
+- **Privacy guard** (`assistant/guard.py`): blocks access to `~/.ssh`, `~/.aws`, Keychains, browser data; detects and redacts passwords, card numbers, API keys and similar secrets in anything read or returned.
+
+## Visualizer (optional)
+
+A small browser page shows a glowing crystal-sphere that reacts live to your voice: gentle idle breathing, ripples with your mic level while listening, pulses with its own speech while talking. It's plain HTML/CSS/Canvas (`assistant/webui/`), served locally by `assistant/webserver.py` and opened automatically in your default browser. Disable with `SHOW_VISUALIZER=0` in `.env`.
+
+## Running it as its own app (so macOS asks permission as "Jarvis", not your terminal/editor)
+
+By default, macOS attributes microphone and Automation permission prompts to whatever process launched Python — your terminal or IDE. `setup.py` packages the assistant as `Jarvis.app` so it owns its own permission identity instead, the same way any installed app does:
+
+```bash
+pip install py2app   # one-time
+python setup.py py2app -A
+./dist/Jarvis.app/Contents/MacOS/Jarvis   # run it this way (not double-click) to keep seeing its output
+```
+
+This is an "alias mode" build: lightweight and tied to this project folder staying where it is, rather than a bundle you could copy elsewhere. See the comment at the top of `setup.py` for details and trade-offs.
 
 ## Safety model
 
 - **Risky actions always ask first**: sending email, running code, moving files. Foreground: spoken/typed yes-no. Background: a notification, then "approve N" / "deny N".
 - File moves never delete and can be undone. Drafting is preferred over sending.
 - It can't read `~/.ssh`, `~/.aws`, `~/.gnupg`, or Keychains, and only writes inside `~/Assistant/workspace`.
-- Web pages are treated as untrusted data; the model is told never to follow instructions found in them, and the approval prompt is the backstop.
+- Web pages and emails are treated as untrusted data; the model is told never to follow instructions found in them, and the approval prompt is the backstop.
 - Honest limit: approved code runs as *you* (it isn't sandboxed). Read what it shows you before saying yes.
 - Set `AUTO_APPROVE_TOOLS` in `.env` only for tools you fully trust.
 
 ## Where things live
 
-`~/Assistant/` holds `notes/`, `workspace/` (code it writes), `plans/`, and `assistant.db` (to-dos, task history).
+`~/Assistant/` holds `notes/`, `workspace/` (code it writes), `plans/`, `assistant.db` (to-dos, memory, task history), and `assistant.log` (diagnostics).
+
+## Key settings (`.env`)
+
+| Setting | Default | What it does |
+|---|---|---|
+| `ASSISTANT_NAME` | `Jarvis` | What it calls itself and responds to in speech |
+| `WAKE_WORD` | `hey_jarvis` | The wake phrase |
+| `WAKE_MODE` | `wakeword` | `wakeword` (tiny model), `whisper` (accent-tolerant), or `enter` (press Enter) |
+| `BRAIN_ORDER` | `claude,groq,ollama` | Fallback order if one is rate-limited or unavailable |
+| `SHOW_VISUALIZER` | `1` | Crystal-sphere browser visualizer on/off |
+| `MAX_REQUEST_SECONDS` | `30` | How long a single spoken request can run before it's cut off |
+| `AUTO_APPROVE_TOOLS` | empty | Comma-separated tools that skip the yes/no prompt |
 
 ## 8 GB tips
 
-- Whisper `base.en` uses about 0.5 GB. Keep `MAX_BG_WORKERS=2`.
+- Whisper `base.en` uses about 0.5 GB; `small.en` is more accurate but slower.
 - Close heavy apps (many Chrome tabs) for faster speech recognition.
-- Cost: each request is a few small API calls (usually cents or less). Long research tasks cost more.
+- Cost: each request is a few small API calls (usually cents or less, and free on Groq's tier). Long research tasks cost more.
 
-## Known limits of this first version
+## Known limits
 
-- Voice and macOS parts (wake word, Mail, notifications) were written but could not be run on a Mac during development; the agent loop, tools, approvals, task queue and reminders are covered by automated tests (`pytest tests`). Expect to tweak the wake-word threshold (`WAKE_THRESHOLD`) and silence detection on your mic.
-- No calendar, Messages, or music control yet; the tool pattern in `assistant/tools.py` makes adding them a small function each.
-- Speaking while the assistant is talking isn't supported (it can't be interrupted yet).
+- No calendar or Messages integration yet; the tool pattern in `assistant/tools.py` makes adding them a small function each.
 - Reminders live in this assistant's own list, not the Apple Reminders app.
+- The `Jarvis.app` packaging (above) is alias-mode: convenient for permission branding on this one machine, not a distributable/movable app.
 
 ## Adding a tool
 
