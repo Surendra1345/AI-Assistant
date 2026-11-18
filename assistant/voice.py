@@ -1,6 +1,7 @@
 """Voice layer, all local: wake word -> record -> Whisper speech-to-text; Piper (or macOS `say`) for speech out.
 You can interrupt it: start talking while it speaks and it stops and listens."""
 import difflib
+import logging
 import os
 import re
 import signal
@@ -216,9 +217,6 @@ class Voice:
         if len(audio) < 1600:
             return "", -9.0
         import numpy as np
-
-        # Noise reduction: spectral subtraction on quiet sections
-        audio = self._reduce_noise(audio)
 
         peak = float(np.abs(audio).max())
         if 0 < peak < 0.5:  # quiet mic: boost (up to 8x) so Whisper gets a healthy signal
