@@ -4,6 +4,11 @@ instead of attributing those prompts to whatever terminal or IDE launched the sc
 the same way Siri or any other installed app owns its own permission entries.
 
 Build (on macOS, inside your activated venv):
+    pip install py2app      # one-time; do NOT rely on setup_requires here - it uses
+                             # setuptools' deprecated egg-fetch path, which in practice
+                             # sometimes pulls in py2app without its own dependencies
+                             # (macholib/modulegraph/altgraph), causing a confusing
+                             # "No module named 'macholib'" failure on the next line
     python setup.py py2app -A
 
 The -A ("alias mode") build is intentionally lightweight: instead of freezing and
@@ -48,5 +53,4 @@ setup(
     app=APP,
     data_files=DATA_FILES,
     options={"py2app": OPTIONS},
-    setup_requires=["py2app"],
 )
