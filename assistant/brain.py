@@ -194,19 +194,25 @@ class Agent:
         return reply
 
     def _run_brains(self, user_text: str, confidence: float = 1.0) -> str:
-        """Try each brain. If Whisper's confidence is very low, ask for confirmation first."""
-        if -1.0 < confidence < -0.6 and confidence != -9.0:    # only on very poor transcriptions, not normal speech
+        """Try each brain. On low Whisper confidence, flag it to the model itself rather than
+        blocking with a canned 'did you mean that?' - the system prompt already tells it to ask
+        a smart clarifying question when a request looks garbled, and it does that well when it
+        can see the actual words (e.g. a mis-heard phrase about an air freshener got a sensible
+        guess-based follow-up). A blanket intercept just adds friction on merely imperfect, still
+        understandable speech; only genuinely wrecked transcriptions need a nudge at all."""
+        text_for_model = user_text
+        if -1.4 < confidence <= -1.1:    # near the bottom of what the hallucination filter lets through
             import logging
-            log = logging.getLogger("brain")
-            log.warning(f"very low confidence ({confidence:.2f}): {user_text!r}")
-            # Ask for confirmation via a simple prompt
-            return f"I heard '{user_text}' but I'm not confident. Did you mean that?"
-        
+            logging.getLogger("brain").info(f"low confidence ({confidence:.2f}): {user_text!r}")
+            text_for_model = (f"{user_text}\n\n[speech-to-text confidence was low for this one - if it "
+                               f"doesn't clearly make sense, ask a short clarifying question with your best "
+                               f"guess instead of acting on it]")
+
         for name in self.order:
             try:
                 if name == "claude":
-                    return self._run_claude(user_text)
-                return self._run_openai(user_text, name)
+                    return self._run_claude(text_for_model)
+                return self._run_openai(text_for_model, name)
             except _Unavailable as e:
                 if self.turn_tools:   # actions already ran this turn: switching brains would repeat them
                     why = "hit my rate limit" if e.rate_limited else "lost my connection"
