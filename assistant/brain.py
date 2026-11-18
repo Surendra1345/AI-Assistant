@@ -183,16 +183,25 @@ class Agent:
             return False   # (a background task does the saving/sending, so the claim is about the future)
         return any(pat.search(reply) and not (need & self.turn_tools) for pat, need in self._CLAIMS)
 
-    def run(self, user_text: str) -> str:
+    def run(self, user_text: str, confidence: float = 1.0) -> str:
+        """Run the agent loop. confidence is Whisper's confidence (0-1 scale, or -9 for silence)."""
         self.turn_tools = set()
         self._announced = False
-        reply = self._run_brains(user_text)
+        reply = self._run_brains(user_text, confidence)
         if self._false_claim(reply):  # said "saved/sent/set" but no such tool ran: never leave that standing
             print(f"  (the model said {reply[:160]!r} but ran no matching tool)")
             reply = "I said I'd done that, but nothing was actually done. Shall I go ahead?"
         return reply
 
-    def _run_brains(self, user_text: str) -> str:
+    def _run_brains(self, user_text: str, confidence: float = 1.0) -> str:
+        """Try each brain. If Whisper's confidence is very low, ask for confirmation first."""
+        if -1.0 < confidence < -0.2 and confidence != -9.0:    # very low confidence but not silence
+            import logging
+            log = logging.getLogger("brain")
+            log.warning(f"low confidence ({confidence:.2f}): {user_text!r}")
+            # Ask for confirmation via a simple prompt
+            return f"I heard '{user_text}' but I'm not confident. Did you mean that?"
+        
         for name in self.order:
             try:
                 if name == "claude":

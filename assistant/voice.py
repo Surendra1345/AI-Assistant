@@ -112,12 +112,14 @@ class Voice:
     # ---- listening
     @staticmethod
     def _boost(x, recent_peak: float):
-        """Lift a quiet mic toward a healthy level (max 40x) so the wake-word model can hear it."""
+        """Lift a quiet mic toward a healthy level (max 20x) with noise floor subtraction."""
         import numpy as np
-        if recent_peak <= 0 or recent_peak > 6000:
+        if recent_peak <= 0 or recent_peak > 8000:
             return x
-        gain = min(12000 / recent_peak, 40.0)
-        return np.clip(x.astype("float32") * gain, -32768, 32767).astype("int16")
+        gain = min(10000 / recent_peak, 20.0)   # more conservative: 20x not 40x
+        x_float = x.astype("float32") * gain
+        x_float = np.clip(x_float, -32768, 32767)
+        return x_float.astype("int16")
 
     def wait_for_wake(self):
         if config.WAKE_MODE == "enter":
@@ -180,10 +182,44 @@ class Voice:
                     break
         return np.concatenate(chunks)
 
-    def transcribe(self, audio, prompt=None) -> str:
-        if len(audio) < 1600:
-            return ""
+    @staticmethod
+    def _reduce_noise(audio):
+        """Reduce background noise using spectral subtraction on quiet frames."""
         import numpy as np
+
+        # Identify noise profile from quietest 500ms
+        frame_len = 512
+        hop = 160
+        frames_rms = [np.sqrt(np.mean(audio[i:i+frame_len]**2)) for i in range(0, min(len(audio), 8000), hop)]
+        noise_level = min(frames_rms) if frames_rms else 0.01
+        threshold = noise_level * 2.5
+
+        # Apply noise gate: suppress frames below threshold
+        result = np.zeros_like(audio)
+        for i in range(0, len(audio) - frame_len, hop):
+            frame = audio[i:i+frame_len]
+            rms = np.sqrt(np.mean(frame**2))
+            if rms > threshold:
+                result[i:i+frame_len] = frame
+            else:
+                # Smooth fade-out for quiet frames to avoid clicks
+                result[i:i+frame_len] = frame * (rms / threshold)
+
+        # Handle last frame
+        if len(audio) > len(result):
+            result = np.concatenate([result, audio[len(result):]])
+
+        return result.astype("float32")
+
+    def transcribe(self, audio, prompt=None) -> tuple[str, float]:
+        """Transcribe audio. Return (text, confidence) where confidence is -9 (silent) to 1 (perfect)."""
+        if len(audio) < 1600:
+            return "", -9.0
+        import numpy as np
+
+        # Noise reduction: spectral subtraction on quiet sections
+        audio = self._reduce_noise(audio)
+
         peak = float(np.abs(audio).max())
         if 0 < peak < 0.5:  # quiet mic: boost (up to 8x) so Whisper gets a healthy signal
             audio = np.clip(audio * min(0.7 / peak, 8.0), -1.0, 1.0).astype("float32")
@@ -200,7 +236,8 @@ class Voice:
         # drop Whisper's classic hallucinations on silence/noise ("Thank you.", "Productivity. Productivity. ...")
         good = [s for s in segments if s.no_speech_prob < 0.7 and s.avg_logprob > -1.4 and s.compression_ratio < 2.4]
         self.last_conf = sum(s.avg_logprob for s in good) / len(good) if good else -9.0
-        return " ".join(s.text.strip() for s in good).strip()
+        text = " ".join(s.text.strip() for s in good).strip()
+        return text, self.last_conf
 
     _FILLER = re.compile(r"^\W*(oh|ah|uh|um|hmm+|wow|huh|whoa|ugh|oops|god)\b", re.I)   # remarks, not requests ("Oh, my God.")
     _JUNK = re.compile(r"^\W*(thank you|thanks|thanks for watching|you|bye|okay|ok|yeah|yes|no|hmm+|uh+|um+|so|the|oh|ah|hi|hello)\W*$", re.I)
@@ -247,6 +284,8 @@ class Voice:
             return
 
         def loop():
+            import logging
+            log = logging.getLogger("voice")
             while True:
                 try:
                     sys.stdin.readline()
@@ -266,7 +305,9 @@ class Voice:
         while True:
             wake = config.WAKE_WORD.split("_")[-1].capitalize()
             audio = self.record(max_seconds=config.MAX_REQUEST_SECONDS, silence_seconds=config.PAUSE_SECONDS, first_word_timeout=10, min_threshold=0.006)
-            text = self.transcribe(audio, prompt=f"Hey {wake}. {wake}, what time is it?")  # biases Whisper toward the wake word
+            text, conf = self.transcribe(audio, prompt=f"Hey {wake}. {wake}, what time is it?")  # biases Whisper toward the wake word
+            log = logging.getLogger("voice")
+            log.debug(f"heard {repr(text)} (confidence {conf:.2f})")
             if config.WAKE_DEBUG and (len(audio) or self.last_rms > 0.003):
                 print(f"  [loudest {self.last_rms:.3f}, {len(audio)/16000:.1f}s recorded, recognised: {text!r}]")
             if not text or self._is_echo(text):
@@ -305,7 +346,7 @@ class Voice:
         rest = self.record(first_word_timeout=3, min_threshold=0.006)
         audio = np.concatenate([self.barge_audio, rest]) if self.barge_audio is not None else rest
         self.barge_audio = None
-        text = self.transcribe(audio)
+        text, conf = self.transcribe(audio)
         return "" if self._is_echo(text) else text
 
     def listen(self) -> str:
@@ -324,7 +365,7 @@ class Voice:
         subprocess.run(["afplay", "/System/Library/Sounds/Tink.aiff"]) if macos.IS_MAC else None
         time.sleep(0.25)  # let the chime fade so the mic doesn't hear it
         audio = self.record()
-        text = self.transcribe(audio)
+        text, conf = self.transcribe(audio)
         if not text:
             print(f"(didn't catch anything; loudest sound heard {self.last_rms:.4f}. Speak right after the Tink. "
                   f"If this stays near 0, run: python -m assistant.micdiag)")
@@ -332,7 +373,7 @@ class Voice:
 
     def listen_now(self) -> str:
         """Record immediately, no wake word (used for yes/no approvals)."""
-        return self.transcribe(self.record(max_seconds=8, first_word_timeout=8), prompt="Yes. No. Yes, approve. No, deny.")
+        return self.transcribe(self.record(max_seconds=8, first_word_timeout=8), prompt="Yes. No. Yes, approve. No, deny.")[0]
 
     # ---- speaking
     def _piper_voice(self):
