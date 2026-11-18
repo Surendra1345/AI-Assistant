@@ -63,7 +63,8 @@ def _mail(result: str) -> str:
             continue
         m = re.match(r"#\d+\s+(?:\[unread\]\s+)?(.*?)(?:\s*<[^>]*>)?:\s+(.*)$", ln)
         if m:
-            msgs.append(f"{m.group(1).strip()}, {re.sub(r'[^\w\s,.!?%$&@\'-]', '', m.group(2)).strip()}")
+            clean_body = re.sub(r'[^\w\s,.!?%$&@\'-]', '', m.group(2)).strip()
+            msgs.append(f"{m.group(1).strip()}, {clean_body}")
     if n == 0:
         return _pick("Your inbox is clear.", "No unread mail. You're all caught up.")
     lead = f"You have {n} unread email{'s' if n != 1 else ''}."
