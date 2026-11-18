@@ -195,10 +195,10 @@ class Agent:
 
     def _run_brains(self, user_text: str, confidence: float = 1.0) -> str:
         """Try each brain. If Whisper's confidence is very low, ask for confirmation first."""
-        if -1.0 < confidence < -0.2 and confidence != -9.0:    # very low confidence but not silence
+        if -1.0 < confidence < -0.6 and confidence != -9.0:    # only on very poor transcriptions, not normal speech
             import logging
             log = logging.getLogger("brain")
-            log.warning(f"low confidence ({confidence:.2f}): {user_text!r}")
+            log.warning(f"very low confidence ({confidence:.2f}): {user_text!r}")
             # Ask for confirmation via a simple prompt
             return f"I heard '{user_text}' but I'm not confident. Did you mean that?"
         
