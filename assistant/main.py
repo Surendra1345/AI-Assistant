@@ -118,8 +118,8 @@ def main():
         from .voice import Voice
         voice = Voice()
         if config.SHOW_VISUALIZER:
-            from .visualizer import Visualizer
-            vis = Visualizer()
+            from .webserver import WebVisualizer
+            vis = WebVisualizer()
             vis.start()
             voice.visualizer = vis
     agent, approvals = build(voice)

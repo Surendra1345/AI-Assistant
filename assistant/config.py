@@ -91,4 +91,5 @@ ACK_SPOKEN = os.environ.get("ACK_SPOKEN", "1") == "1"  # say a short "On it" bef
 MAX_REQUEST_SECONDS = float(os.environ.get("MAX_REQUEST_SECONDS", "30"))
 PAUSE_SECONDS = float(os.environ.get("PAUSE_SECONDS", "1.2"))    # raise to 1.5-2 if it cuts you off while you think
 
-SHOW_VISUALIZER = os.environ.get("SHOW_VISUALIZER", "1") == "1"  # floating crystal-ring window that pulses with voice
+SHOW_VISUALIZER = os.environ.get("SHOW_VISUALIZER", "1") == "1"  # crystal-ring page (HTML/CSS/JS) that pulses with voice
+VISUALIZER_PORT = int(os.environ.get("VISUALIZER_PORT", "8765"))
