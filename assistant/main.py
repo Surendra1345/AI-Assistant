@@ -8,8 +8,9 @@ import time
 
 from datetime import datetime
 
-from . import config, finance, macos, router, store, tools  # noqa: F401 (finance registers its tools)
+from . import config, finance, logging_config, macos, router, store, tools  # noqa: F401 (finance registers its tools)
 from .brain import Agent
+from .health import HealthCheck
 from .safety import Approvals
 from .tasks import ProactiveMonitor, ReminderScheduler, TaskManager
 
@@ -67,7 +68,7 @@ def make_ack(voice):
 QUICK_APPROVAL = re.compile(r"^\W*(approve|deny)\s+#?(\d+)\W*$", re.I)
 
 
-def handle(agent: Agent, approvals: Approvals, text: str) -> str:
+def handle(agent: Agent, approvals: Approvals, text: str, confidence: float = 1.0) -> str:
     m = QUICK_APPROVAL.match(text)  # fast path so approvals never wait on the model
     if m:
         ok = approvals.resolve(int(m.group(2)), m.group(1).lower() == "approve")
@@ -79,7 +80,7 @@ def handle(agent: Agent, approvals: Approvals, text: str) -> str:
     fast = router.route(text)  # simple commands skip the model entirely
     if fast is not None:
         return fast
-    return agent.run(text)
+    return agent.run(text, confidence)
 
 
 def greet(voice=None):
@@ -100,6 +101,14 @@ def greet(voice=None):
 
 
 def main():
+    # Set up logging and health checks first
+    logger = logging_config.setup()
+    hc = HealthCheck()
+    if not hc.check_all():
+        hc.report()
+        return
+    hc.report()
+    
     ap = argparse.ArgumentParser()
     ap.add_argument("--text", action="store_true", help="type instead of speaking")
     args = ap.parse_args()
@@ -135,7 +144,8 @@ def main():
                     print(f"You: {text}")
                 if re.fullmatch(r"\W*(quit|exit|goodbye|stop listening)\W*", text, re.I):
                     break
-                reply = handle(agent, approvals, text)
+                conf = getattr(voice, "last_conf", 1.0) if voice else 1.0
+                reply = handle(agent, approvals, text, conf)
                 failures = 0
                 if not reply:
                     continue
