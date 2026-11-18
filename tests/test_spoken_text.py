@@ -16,11 +16,11 @@ def test_mail_list_is_spoken_naturally():
 
 def test_check_mail_drops_addresses_and_emoji(monkeypatch):
     monkeypatch.setattr(tools.macos, "osascript", lambda *a, **k:
-                        "UNREAD:2\n1 | false | Binance <do_not_reply@mailersp2.binance.com> | Join us 🚀🌙 today\n"
-                        "2 | true | Myntra <updates@myntra.com> | Sale 🛒\n")
+                        "UNREAD:2\nGmail | 1 | false | Binance <do_not_reply@mailersp2.binance.com> | Join us 🚀🌙 today | 10\n"
+                        "Gmail | 2 | true | Myntra <updates@myntra.com> | Sale 🛒 | 20\n")
     out = tools.check_mail()
     assert "@" not in out and "<" not in out and "🚀" not in out
-    assert "#1 [unread] Binance: Join us today" in out and "#2 Myntra: Sale" in out
+    assert "#1 [unread] Binance (Gmail): Join us today" in out and "#2 Myntra (Gmail): Sale" in out
 
 
 @pytest.mark.parametrize("remark", ["Oh, my God.", "Oh, it's waiting on.", "Hmm, let me think", "Wow that's loud"])
