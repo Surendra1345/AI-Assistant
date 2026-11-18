@@ -3,12 +3,12 @@ import pytest
 from assistant import brain, config, tools
 from tests.test_features import call, groq_agent, msg
 
-_SCAN = ("1 | 0 | Naukri <jobs@naukri.com> | Your application to Infosys was sent\n"
-         "2 | 2 | Myntra <updates@myntra.com> | Add colour to your cart 🛒\n"
-         "3 | 4 | TCS Careers <careers@tcs.com> | Thank you for applying: Data Engineer\n"
-         "4 | 6 | HDFC Bank <alerts@hdfcbank.net> | Your account statement\n"
-         "5 | 9 | LinkedIn <jobs-noreply@linkedin.com> | You applied for ML Engineer at Wipro\n"
-         "6 | 14 | Accenture <recruit@accenture.com> | Interview invitation\n")
+_SCAN = ("Gmail | 101 | 0 | Naukri <jobs@naukri.com> | Your application to Infosys was sent\n"
+         "Gmail | 102 | 2 | Myntra <updates@myntra.com> | Add colour to your cart 🛒\n"
+         "Gmail | 103 | 4 | TCS Careers <careers@tcs.com> | Thank you for applying: Data Engineer\n"
+         "Gmail | 104 | 6 | HDFC Bank <alerts@hdfcbank.net> | Your account statement\n"
+         "Gmail | 105 | 9 | LinkedIn <jobs-noreply@linkedin.com> | You applied for ML Engineer at Wipro\n"
+         "Gmail | 106 | 14 | Accenture <recruit@accenture.com> | Interview invitation\n")
 
 
 @pytest.fixture
@@ -19,8 +19,8 @@ def inbox(monkeypatch):
 def test_search_mail_finds_applications_in_the_period(inbox):
     out = tools.search_mail("applied, application, applying, interview, career", days=10)
     assert "3 match" in out
-    assert "#1 (today) Naukri: Your application to Infosys" in out
-    assert "#3 (4 days ago) TCS Careers" in out and "#5 (9 days ago) LinkedIn" in out
+    assert "#1 (today) Naukri (Gmail): Your application to Infosys" in out
+    assert "#2 (4 days ago) TCS Careers" in out and "#3 (9 days ago) LinkedIn" in out
     assert "Accenture" not in out            # 14 days old: outside the 10 days
     assert "Myntra" not in out and "@" not in out
 
@@ -29,7 +29,7 @@ def test_search_mail_hides_private_and_reports_empty(inbox):
     out = tools.search_mail("statement, hdfc", days=10)
     assert "HDFC" not in out and "private ones" in out
     assert "None match" in tools.search_mail("zzzz", days=10)
-    assert "5 match" not in tools.search_mail("", days=3) and "#2 (2 days ago) Myntra" in tools.search_mail("", days=3)
+    assert "5 match" not in tools.search_mail("", days=3) and "#2 (2 days ago) Myntra (Gmail)" in tools.search_mail("", days=3)
 
 
 def test_matches_sender_domain_too(inbox):

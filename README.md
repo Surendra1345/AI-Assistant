@@ -16,6 +16,14 @@ A private, voice-driven personal assistant for your Mac, in the spirit of Tony S
 
 On startup it runs a health check (microphone, API key, Mail permission, Whisper model, Ollama) and tells you exactly what to fix if something's missing, instead of failing silently later.
 
+### Using Gmail
+
+Mail tools go through the Mail app, and check every account you've added there — so Gmail works too, once it's set up as a Mail.app account:
+
+1. In Gmail: Settings → See all settings → Forwarding and POP/IMAP → enable IMAP.
+2. On your Mac: System Settings → Internet Accounts → add your Google account (or add it directly inside Mail.app).
+3. That's it — `check_mail` and `search_mail` now show messages from every account, Apple's own and Gmail, merged and sorted by date, and label which account each one came from.
+
 ## What you can say
 
 | Say | What happens |
