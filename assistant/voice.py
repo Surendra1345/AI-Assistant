@@ -2,6 +2,7 @@
 You can interrupt it: start talking while it speaks and it stops and listens."""
 import difflib
 import logging
+import math
 import os
 import re
 import signal
@@ -40,6 +41,7 @@ class Voice:
         self.speaking_text = ""  # what we are saying right now (to recognise our own voice in the mic)
         self.follow_until = 0.0  # after a question from us: accept the answer without the wake word until then
         self.last_conf = 0.0     # Whisper's confidence in the last transcript (avg log-prob)
+        self.visualizer = None   # optional Visualizer: fed mic/speech levels so the crystal ring reacts
 
     # ---- lazy loading keeps startup fast and memory low
     def _audio(self):
@@ -165,6 +167,8 @@ class Voice:
                 data = np.squeeze(data).copy()
                 rms = float(np.sqrt(np.mean(data ** 2)))
                 self.last_rms = max(self.last_rms, rms)
+                if self.visualizer is not None:
+                    self.visualizer.set_level(min(1.0, rms * 12))   # mic RMS is tiny; scale up for the ring
                 if len(noise) < 3:                       # first 0.3 s: measure room noise (audio is still kept)
                     noise.append(rms)
                 # quietest block = true room noise; capped so normal speech is always detectable
@@ -300,6 +304,8 @@ class Voice:
         """Wake word via Whisper: far more tolerant of accents than the tiny wake-word model."""
         self._start_ptt()
         print(f"Listening for '{config.WAKE_WORD.replace('_', ' ')}' (say it, then your request). Or press Enter, then just talk.")
+        if self.visualizer is not None:
+            self.visualizer.set_mode("listening")
         while True:
             wake = config.WAKE_WORD.split("_")[-1].capitalize()
             audio = self.record(max_seconds=config.MAX_REQUEST_SECONDS, silence_seconds=config.PAUSE_SECONDS, first_word_timeout=10, min_threshold=0.006)
@@ -480,11 +486,17 @@ class Voice:
         like "stop" in a pause or over a quiet syllable is caught; without it a fixed echo level is used."""
         import numpy as np
         if stream is None:
+            k = 0
             while proc.poll() is None:
                 if self.stop_requested:
                     proc.terminate()
                     return True
+                if self.visualizer is not None:
+                    level = float(env[min(k, len(env) - 1)]) * 3 if env is not None and len(env) \
+                        else 0.3 + 0.2 * math.sin(k * 0.5)
+                    self.visualizer.set_level(min(1.0, level))
                 time.sleep(0.05)
+                k += 1
             return False
         st.setdefault("k", 0)
         st.setdefault("gains", [])
@@ -498,6 +510,9 @@ class Voice:
             st["buf"] = (st["buf"] + [data])[-6:]
             st["t"] += 0.1
             st["k"] += 1
+            if self.visualizer is not None:
+                lvl = float(env[min(st["k"], len(env) - 1)]) * 3 if env is not None and len(env) else rms * 10
+                self.visualizer.set_level(min(1.0, lvl))
             if env is not None and len(env):
                 k = st["k"]
                 expected = float(env[max(0, k - 3):k + 2].max()) if k - 3 < len(env) else 0.0
@@ -576,6 +591,8 @@ class Voice:
         clean = self.tts_clean(text)
         print(f"Assistant: {text}")
         self._start_ptt()
+        if self.visualizer is not None:
+            self.visualizer.set_mode("speaking")
         with self._speak_lock:
             self.speaking, self.stop_requested = True, False
             self.speaking_text = clean
@@ -622,6 +639,9 @@ class Voice:
                     stream.close()
         self.last_spoken, self.spoke_end, self.speaking_text, self.speaking = clean, time.time(), "", False
         self.follow_until = time.time() + 15 if clean.rstrip().endswith("?") and barge else 0.0   # asked something: no wake word needed to answer
+        if self.visualizer is not None:
+            self.visualizer.set_mode("idle")
+            self.visualizer.set_level(0.0)
         if not self.barged and settle:
             time.sleep(0.8 if self.using_speakers() else 0.4)   # let the room's echo die down before listening again
         self.last_active = time.time()

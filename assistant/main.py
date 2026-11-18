@@ -117,6 +117,11 @@ def main():
     if not args.text:
         from .voice import Voice
         voice = Voice()
+        if config.SHOW_VISUALIZER:
+            from .visualizer import Visualizer
+            vis = Visualizer()
+            vis.start()
+            voice.visualizer = vis
     agent, approvals = build(voice)
     approvals.interactive_confirm = voice.confirm if voice else text_confirm
     agent.on_first_tool = make_ack(voice)
@@ -165,6 +170,8 @@ def main():
                 time.sleep(delay)
     except (KeyboardInterrupt, EOFError):
         pass
+    if voice and voice.visualizer:
+        voice.visualizer.stop()
     print("Bye.")
     sys.exit(0)
 
