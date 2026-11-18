@@ -86,3 +86,7 @@ BATTERY_WARN = int(os.environ.get("BATTERY_WARN", "20"))         # warn at this 
 ASSISTANT_NAME = os.environ.get("ASSISTANT_NAME", "Jarvis")
 USER_TITLE = os.environ.get("USER_TITLE", "")        # how it addresses you, e.g. "sir" or your first name; empty = rarely uses one
 ACK_SPOKEN = os.environ.get("ACK_SPOKEN", "1") == "1"  # say a short "On it" before slow work (searching, markets, code)
+
+# How long you can talk. A request ends after PAUSE_SECONDS of silence or MAX_REQUEST_SECONDS in total.
+MAX_REQUEST_SECONDS = float(os.environ.get("MAX_REQUEST_SECONDS", "30"))
+PAUSE_SECONDS = float(os.environ.get("PAUSE_SECONDS", "1.2"))    # raise to 1.5-2 if it cuts you off while you think

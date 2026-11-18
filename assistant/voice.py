@@ -143,12 +143,14 @@ class Voice:
                         model.reset()
                     return
 
-    def record(self, max_seconds: float = 20, silence_seconds: float = 0.9, first_word_timeout: float = 6,
+    def record(self, max_seconds: float = None, silence_seconds: float = None, first_word_timeout: float = 6,
                min_threshold: float = 0.003):
         """Record until you stop talking. Returns float32 mono audio at 16 kHz (empty if nothing was said).
         Keeps a 0.5 s pre-roll so the first syllable isn't clipped; max_seconds counts from when you start talking."""
         import numpy as np
         from collections import deque
+        max_seconds = config.MAX_REQUEST_SECONDS if max_seconds is None else max_seconds
+        silence_seconds = config.PAUSE_SECONDS if silence_seconds is None else silence_seconds
         sd = self._audio()
         block = 1600  # 100 ms
         self.last_rms = 0.0
@@ -263,7 +265,7 @@ class Voice:
         print(f"Listening for '{config.WAKE_WORD.replace('_', ' ')}' (say it, then your request). Or press Enter, then just talk.")
         while True:
             wake = config.WAKE_WORD.split("_")[-1].capitalize()
-            audio = self.record(max_seconds=12, silence_seconds=0.7, first_word_timeout=10, min_threshold=0.006)
+            audio = self.record(max_seconds=config.MAX_REQUEST_SECONDS, silence_seconds=config.PAUSE_SECONDS, first_word_timeout=10, min_threshold=0.006)
             text = self.transcribe(audio, prompt=f"Hey {wake}. {wake}, what time is it?")  # biases Whisper toward the wake word
             if config.WAKE_DEBUG and (len(audio) or self.last_rms > 0.003):
                 print(f"  [loudest {self.last_rms:.3f}, {len(audio)/16000:.1f}s recorded, recognised: {text!r}]")
