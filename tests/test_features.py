@@ -632,6 +632,25 @@ def test_find_files_by_name_skips_sensitive(docs):
     assert "bank" not in tools.find_files("statement", str(docs)) or "No file" in tools.find_files("statement", str(docs))
 
 
+def test_resume_search_matches_synonyms_and_falls_back(tmp_path, monkeypatch):
+    """A resume doesn't always have 'resume' in its filename - 'cv'/'curriculum vitae' should match too,
+    and with no name match at all, the newest plain document should be offered instead of a dead end."""
+    from assistant import tools
+    d = tmp_path / "Downloads"; d.mkdir()
+    (d / "Surendranath_CV_2026.pdf").write_text("x")
+    monkeypatch.setattr(tools, "_SEARCH_DIRS", [str(d)])
+    out = tools.find_files("resume")
+    assert "Surendranath_CV_2026.pdf" in out and "No file" not in out
+
+    d2 = tmp_path / "Downloads2"; d2.mkdir()
+    import os
+    older, newer = d2 / "offer_letter.pdf", d2 / "profile_latest.docx"
+    older.write_text("a"); newer.write_text("b"); os.utime(older, (1, 1))
+    monkeypatch.setattr(tools, "_SEARCH_DIRS", [str(d2)])
+    out = tools.find_files("resume")
+    assert "profile_latest.docx" in out and "No file named 'resume'" in out
+
+
 def test_read_docx_and_txt(docs):
     assert "Python, Java, SQL" in tools.read_file(str(docs / "Surendra_Resume.txt"))
     if (docs / "Surendra_Resume.docx").exists():
@@ -761,9 +780,9 @@ def test_speakers_turn_off_voice_interrupt_and_followups(monkeypatch):
     v = Voice()
     monkeypatch.setattr(config, "BARGE_IN", "auto"); monkeypatch.setattr(config, "FOLLOWUP_SECONDS", -1)
     monkeypatch.setattr(v, "_audio", lambda: NS(query_devices=lambda kind=None: {"name": "MacBook Air Speakers"}))
-    assert v.using_speakers() and not v.barge_enabled() and v.followup_seconds() == 20
+    assert v.using_speakers() and not v.barge_enabled() and v.followup_seconds() == 35
     monkeypatch.setattr(v, "_audio", lambda: NS(query_devices=lambda kind=None: {"name": "POCO Pods"}))
-    assert not v.using_speakers() and v.barge_enabled() and v.followup_seconds() == 30
+    assert not v.using_speakers() and v.barge_enabled() and v.followup_seconds() == 45
     monkeypatch.setattr(config, "BARGE_IN", "1"); monkeypatch.setattr(config, "FOLLOWUP_SECONDS", 5)
     monkeypatch.setattr(v, "_audio", lambda: NS(query_devices=lambda kind=None: {"name": "MacBook Air Speakers"}))
     assert v.barge_enabled() and v.followup_seconds() == 5              # explicit settings win
@@ -791,6 +810,28 @@ def test_open_file_finds_newest_and_opens(tmp_path, monkeypatch):
     assert "resume new.pdf" in tools.open_file("resume")
     assert calls == [["open", str(new)]]
     assert "couldn't find" in tools.open_file("nothingherexyz")
+
+
+def test_open_url_defaults_and_specific_browser(monkeypatch):
+    import subprocess
+    from assistant import tools
+    calls = []
+    monkeypatch.setattr(subprocess, "run", lambda cmd, **k: calls.append(cmd))
+    out = tools.open_url("github.com")
+    assert calls[-1] == ["open", "https://github.com"] and "Opened https://github.com." == out
+    out = tools.open_url("github.com", browser="Google Chrome")
+    assert calls[-1] == ["open", "-a", "Google Chrome", "https://github.com"]
+    assert "in Google Chrome" in out
+
+
+def test_open_url_reports_unknown_browser(monkeypatch):
+    import subprocess
+    from assistant import tools
+    def boom(cmd, **k):
+        raise subprocess.CalledProcessError(1, cmd)
+    monkeypatch.setattr(subprocess, "run", boom)
+    out = tools.open_url("example.com", browser="Not A Real Browser")
+    assert "Couldn't find a browser" in out
 
 
 def test_email_me_uses_configured_address(monkeypatch):

@@ -89,7 +89,7 @@ class Voice:
     def followup_seconds(self) -> int:
         if config.FOLLOWUP_SECONDS >= 0:
             return config.FOLLOWUP_SECONDS
-        return 20 if self.using_speakers() else 30   # a conversation stays open; "thanks" or silence closes it
+        return 35 if self.using_speakers() else 45   # a conversation stays open; "thanks" or silence closes it
 
     def _load_stt(self):
         if self._stt is None:

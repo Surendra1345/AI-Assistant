@@ -20,9 +20,9 @@ def test_conversation_window_is_open_by_default(monkeypatch):
     v = Voice()
     monkeypatch.setattr(config, "FOLLOWUP_SECONDS", -1)
     monkeypatch.setattr(v, "using_speakers", lambda: True)
-    assert v.followup_seconds() == 20
+    assert v.followup_seconds() == 35
     monkeypatch.setattr(v, "using_speakers", lambda: False)
-    assert v.followup_seconds() == 30
+    assert v.followup_seconds() == 45
     monkeypatch.setattr(config, "FOLLOWUP_SECONDS", 0)
     assert v.followup_seconds() == 0         # user can switch it off
 

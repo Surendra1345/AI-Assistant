@@ -89,7 +89,7 @@ ACK_SPOKEN = os.environ.get("ACK_SPOKEN", "1") == "1"  # say a short "On it" bef
 
 # How long you can talk. A request ends after PAUSE_SECONDS of silence or MAX_REQUEST_SECONDS in total.
 MAX_REQUEST_SECONDS = float(os.environ.get("MAX_REQUEST_SECONDS", "30"))
-PAUSE_SECONDS = float(os.environ.get("PAUSE_SECONDS", "1.2"))    # raise to 1.5-2 if it cuts you off while you think
+PAUSE_SECONDS = float(os.environ.get("PAUSE_SECONDS", "1.6"))    # raise to 2+ if it still cuts you off mid-thought
 
 SHOW_VISUALIZER = os.environ.get("SHOW_VISUALIZER", "1") == "1"  # crystal-ring page (HTML/CSS/JS) that pulses with voice
 VISUALIZER_PORT = int(os.environ.get("VISUALIZER_PORT", "8765"))
