@@ -39,6 +39,26 @@ def test_market_movers_ranks_by_day_change(monkeypatch):
     assert out.index("NVDA") < out.index("Biggest fallers") < out.index("INTC")
 
 
+def test_market_movers_includes_the_index_for_context(monkeypatch):
+    """A broad 'where should I invest' question needs the overall index, not just individual companies."""
+    table = {s: [100.0] * 25 + [100.0, 101.0] for s in finance.US_WATCH}
+    for sym in finance.US_INDEX:
+        table[sym] = [100.0] * 25 + [100.0, 102.0]
+    _fake(monkeypatch, table)
+    out = finance.market_movers("us")
+    assert out.startswith("Index today:") and "+2.0%" in out.split("Top risers")[0]
+
+
+def test_investment_scenario_works_on_an_index_name(monkeypatch):
+    def get(url, params=None):
+        if "search" in url:
+            return {"quotes": [{"symbol": "^GSPC", "quoteType": "INDEX"}]}
+        return _chart("^GSPC", [4000.0, 4400.0])
+    monkeypatch.setattr(finance, "_get_json", get)
+    out = finance.investment_scenario(10000, "S&P 500", "5y")
+    assert "+10.0%" in out and "could just as easily fall" in out
+
+
 def test_investment_scenario(monkeypatch):
     _fake(monkeypatch, {"AAPL": [100.0, 120.0, 90.0, 150.0]})
     out = finance.investment_scenario(1000, "AAPL", "1y")
