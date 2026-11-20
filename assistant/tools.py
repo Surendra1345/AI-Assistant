@@ -252,12 +252,21 @@ def music_control(action: str, app: Optional[str] = None) -> str:
             "next": "Next track.", "previous": "Previous track."}[action]
 
 
-@tool("open_url", "Open a web address in the default browser.", {"url": {"type": "string"}}, ["url"])
-def open_url(url: str) -> str:
+@tool("open_url", "Open a web address, optionally in a specific browser ('open chrome and go to github.com' -> "
+                 "url='github.com', browser='Google Chrome'). Without a browser, uses the default one.",
+      {"url": {"type": "string"}, "browser": {"type": "string",
+       "description": "optional app name, e.g. 'Safari', 'Google Chrome', 'Firefox'"}}, ["url"])
+def open_url(url: str, browser: Optional[str] = None) -> str:
     if not url.startswith(("http://", "https://")):
         url = "https://" + url
-    subprocess.run(["open", url], check=True, capture_output=True, timeout=15)
-    return f"Opened {url}."
+    cmd = ["open", "-a", browser, url] if browser else ["open", url]
+    try:
+        subprocess.run(cmd, check=True, capture_output=True, timeout=15)
+    except subprocess.CalledProcessError:
+        if browser:
+            return f"Couldn't find a browser called '{browser}'. Is it installed, under that exact name?"
+        raise
+    return f"Opened {url}" + (f" in {browser}." if browser else ".")
 
 
 @tool("set_volume", "Set the Mac output volume, 0-100.", {"level": {"type": "integer"}}, ["level"])
@@ -754,15 +763,33 @@ def _read_document(p: Path) -> str:
     return p.read_text(errors="replace")
 
 
+_DOC_SYNONYMS = {"resume": ["resume", "cv", "curriculum vitae", "biodata"]}
+_DOC_EXTS = {".pdf", ".doc", ".docx", ".txt", ".rtf", ".pages", ".odt"}
+
+
+def _matches(low: str, words: list) -> bool:
+    """True if `low` (a lowercased filename) satisfies every search word - a word with known synonyms
+    (e.g. 'resume' also means 'cv'/'curriculum vitae'/'biodata') matches if ANY of those appear."""
+    for w in words:
+        variants = _DOC_SYNONYMS.get(w, [w])
+        if not any(v in low for v in variants):
+            return False
+    return True
+
+
 def _search_files(name: str, folder: Optional[str] = None):
-    """([(mtime, path)] newest first, [blocked folders]) for files whose name contains every word of `name`."""
+    """([(mtime, path)] newest first, [blocked folders]) for files whose name contains every word of `name`
+    (synonym-aware for common cases like resume/cv). If nothing matches by name but the query is one of those
+    known categories, falls back to the newest plain document in the search folders - a resume doesn't always
+    have 'resume' in its filename, and the newest document there usually is the one meant."""
     words = [w for w in re.split(r"\W+", name.lower()) if w]
     if folder:
         f = folder.strip().lower()
         dirs = [f"~/{f.capitalize()}"] if f in ("downloads", "desktop", "documents") else [folder]
     else:
         dirs = _SEARCH_DIRS
-    hits, blocked = [], []
+    hits, fallback, blocked = [], [], []
+    is_known_category = any(w in _DOC_SYNONYMS for w in words)
     for d in dirs:
         root = Path(d).expanduser()
         try:
@@ -771,27 +798,44 @@ def _search_files(name: str, folder: Optional[str] = None):
                 dirnames[:] = [x for x in dirnames if not x.startswith(".") and depth < 3]
                 for fn in filenames:
                     low = fn.lower()
-                    if fn.startswith(".") or not all(w in low for w in words) or guard.is_sensitive_name(fn):
+                    if fn.startswith(".") or guard.is_sensitive_name(fn):
                         continue
                     fp = Path(dirpath) / fn
-                    try:
-                        hits.append((fp.stat().st_mtime, fp))
-                    except OSError:
-                        pass
+                    if _matches(low, words):
+                        try:
+                            hits.append((fp.stat().st_mtime, fp))
+                        except OSError:
+                            pass
+                    elif is_known_category and fp.suffix.lower() in _DOC_EXTS:
+                        try:
+                            fallback.append((fp.stat().st_mtime, fp))
+                        except OSError:
+                            pass
         except PermissionError:
             blocked.append(d)
         except OSError:
             pass
-    return sorted(hits, reverse=True), blocked
+    if hits:
+        return sorted(hits, reverse=True), blocked, False
+    if fallback:   # no filename matched, but e.g. a resume-type request: offer the newest plain document instead
+        return sorted(fallback, reverse=True)[:1], blocked, True
+    return [], blocked, False
 
 
 @tool("find_files", "Find files by name in Downloads, Desktop and Documents (newest first). Use it when the user names a file "
-                    "without a full path, like 'my resume in downloads'.",
+                    "without a full path, like 'my resume in downloads'. For a resume/cv, also matches 'cv', "
+                    "'curriculum vitae' and 'biodata', and if nothing's named that at all, falls back to the newest "
+                    "plain document in the folder - say so if it's a fallback, since the name wasn't an exact match.",
       {"name": {"type": "string", "description": "words in the file name, e.g. 'resume'"},
        "folder": {"type": "string", "description": "optional: downloads, desktop, documents or a path"}}, ["name"])
 def find_files(name: str, folder: Optional[str] = None) -> str:
-    hits, blocked = _search_files(name, folder)
-    msg = "\n".join(str(fp) for _, fp in hits[:15]) if hits else f"No file matching '{name}' found."
+    hits, blocked, is_fallback = _search_files(name, folder)
+    if hits:
+        msg = "\n".join(str(fp) for _, fp in hits[:15])
+        if is_fallback:
+            msg = f"No file named '{name}', but this is the newest document in the folder:\n{msg}"
+    else:
+        msg = f"No file matching '{name}' found."
     if blocked:
         msg += "\n" + _PRIVACY_HINT.format(d=", ".join(blocked))
     return msg
@@ -805,12 +849,13 @@ _LAUNCHERS = {".command", ".sh", ".app", ".pkg", ".dmg", ".scpt", ".workflow", "
       {"name": {"type": "string", "description": "words in the file name, or a full path"},
        "folder": {"type": "string", "description": "optional: downloads, desktop, documents"}}, ["name"])
 def open_file(name: str, folder: Optional[str] = None) -> str:
+    is_fallback = False
     if name.startswith(("~", "/")):
         target = _check_readable(Path(name))
         if not target.exists():
             return f"Nothing at {name}."
     else:
-        hits, blocked = _search_files(name, folder)
+        hits, blocked, is_fallback = _search_files(name, folder)
         if not hits:
             return f"I couldn't find a file matching '{name}'" + (f" in {folder}." if folder else ".") + \
                    ("\n" + _PRIVACY_HINT.format(d=", ".join(blocked)) if blocked else "")
@@ -819,7 +864,8 @@ def open_file(name: str, folder: Optional[str] = None) -> str:
         return f"{target.name} is a program or installer, so I won't launch it. Open it yourself in Finder."
     subprocess.run(["open", str(target)], check=True, capture_output=True, timeout=15)
     more = f" ({len(hits) - 1} other matches)" if not name.startswith(("~", "/")) and len(hits) > 1 else ""
-    return f"Opened {target.name}{more}."
+    note = f" (nothing was named '{name}', so I opened the newest document instead)" if is_fallback else ""
+    return f"Opened {target.name}{more}{note}."
 
 
 @tool("read_file", "Read a file's text (txt, md, code, PDF, Word .docx). First ~6000 characters.", {"path": {"type": "string"}}, ["path"])
