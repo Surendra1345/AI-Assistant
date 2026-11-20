@@ -294,6 +294,8 @@ class Agent:
                     _COOLDOWN[model] = time.time() + 3600
                     continue
                 if r.status_code == 400 and "tool_use_failed" in r.text:
+                    import logging
+                    logging.getLogger("brain").warning(f"{model} rejected a tool call as malformed: {r.text[:500]}")
                     raise _ToolFormat()
                 if r.status_code >= 400:
                     raise RuntimeError(f"{name} error {r.status_code}: {r.text[:200]}")
@@ -326,6 +328,8 @@ class Agent:
                 fmt_errors += 1
                 if fmt_errors <= 2:
                     continue                           # the model garbled the tool call: ask again
+                import logging
+                logging.getLogger("brain").warning(f"gave up after {fmt_errors} malformed tool calls for: {user_text!r}")
                 del self.oa_messages[start:]
                 return "Sorry, I had trouble with that one. Could you say it again?"
             except _Unavailable:

@@ -303,7 +303,6 @@ class Voice:
     def _listen_whisper(self) -> str:
         """Wake word via Whisper: far more tolerant of accents than the tiny wake-word model."""
         self._start_ptt()
-        print(f"Listening for '{config.WAKE_WORD.replace('_', ' ')}' (say it, then your request). Or press Enter, then just talk.")
         if self.visualizer is not None:
             self.visualizer.set_mode("listening")
         while True:
@@ -314,6 +313,11 @@ class Voice:
             # hurts accuracy on unrelated phrases ("open wipro openings" -> "It's been a long time").
             expecting_wake = not (time.time() < self.ptt_until or time.time() < self.follow_until
                                    or time.time() - self.last_active < self.followup_seconds())
+            # Say what's actually true right now, not a fixed message every time: if the follow-up
+            # window is still open, the user does NOT need to repeat the wake word, and they should
+            # be told so instead of seeing the same "say hey jarvis" prompt regardless of state.
+            print(f"Listening for '{config.WAKE_WORD.replace('_', ' ')}' (say it, then your request). Or press Enter, then just talk."
+                  if expecting_wake else "(still listening - just talk, no need for the wake word yet)")
             prompt = f"Hey {wake}. {wake}, what time is it?" if expecting_wake else None
             audio = self.record(max_seconds=config.MAX_REQUEST_SECONDS, silence_seconds=config.PAUSE_SECONDS, first_word_timeout=10, min_threshold=0.006)
             text, conf = self.transcribe(audio, prompt=prompt)
