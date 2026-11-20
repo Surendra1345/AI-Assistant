@@ -78,6 +78,10 @@ INDIA_WATCH = ["RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "INFY.NS", "ICICIBANK.NS"
                "SUNPHARMA.NS", "HCLTECH.NS", "BAJFINANCE.NS", "TATASTEEL.NS", "ZOMATO.NS"]
 _RANGES = {"1d": ("5d", "1d"), "1w": ("1mo", "1d"), "1m": ("1mo", "1d"), "3m": ("3mo", "1d"), "6m": ("6mo", "1d"),
            "1y": ("1y", "1d"), "5y": ("5y", "1wk")}
+# Market indices, for context on the overall market rather than just individual companies.
+# Yahoo's chart API accepts these ticker symbols directly (same endpoint stock_quote/investment_scenario use).
+US_INDEX = ("^GSPC", "^IXIC")     # S&P 500, Nasdaq Composite
+INDIA_INDEX = ("^NSEI", "^BSESN")  # Nifty 50, Sensex
 
 
 def _get_json(url: str, params: Optional[dict] = None) -> dict:
@@ -138,9 +142,10 @@ def _safe(sym: str):
         return None
 
 
-@tool("stock_quote", "Live price and recent trend for companies, by ticker or name (e.g. 'AAPL', 'Tesla', 'RELIANCE.NS'). "
+@tool("stock_quote", "Live price and recent trend for companies OR market indices, by ticker or name "
+                     "(e.g. 'AAPL', 'Tesla', 'RELIANCE.NS', 'S&P 500', 'Nifty 50', '^GSPC'). "
                      "Gives today's move, 1-week and 1-month change. Pass several, comma separated.",
-      {"symbols": {"type": "string", "description": "tickers or company names, comma separated"}}, ["symbols"])
+      {"symbols": {"type": "string", "description": "tickers or company/index names, comma separated"}}, ["symbols"])
 def stock_quote(symbols: str) -> str:
     out = []
     for raw in [s for s in symbols.split(",") if s.strip()][:6]:
@@ -151,27 +156,37 @@ def stock_quote(symbols: str) -> str:
     return "\n".join(out) + f"\n{DISCLAIMER}"
 
 
-@tool("market_movers", "Which big companies are rising or falling most right now. market is 'us' or 'india'. "
-                       "Use for 'which company is going up/high today'.",
+@tool("market_movers", "Which big companies are rising or falling most right now, plus the overall index for context "
+                       "(S&P 500/Nasdaq for US, Nifty 50/Sensex for India). market is 'us' or 'india'. "
+                       "Use for 'which company is going up/high today' and for 'where should I invest' style questions "
+                       "- check this before naming individual companies, so the answer reflects the broader market too.",
       {"market": {"type": "string", "enum": ["us", "india"]}, "period": {"type": "string", "enum": ["today", "month"]}})
 def market_movers(market: str = "us", period: str = "today") -> str:
-    syms = INDIA_WATCH if market.lower().startswith("in") else US_WATCH
+    is_india = market.lower().startswith("in")
+    syms = INDIA_WATCH if is_india else US_WATCH
+    index_syms = INDIA_INDEX if is_india else US_INDEX
     with ThreadPoolExecutor(8) as ex:
         rows = [r for r in ex.map(_safe, syms) if r]
+        index_rows = [r for r in ex.map(_safe, index_syms) if r]
     if not rows:
         return "ERROR: couldn't reach market data right now."
     key = "month" if period == "month" else "day"
     rows.sort(key=lambda r: r[key], reverse=True)
     label = "past month" if key == "month" else "today"
     top, bottom = rows[:5], rows[-3:][::-1]
-    return (f"Top risers {label} among {len(rows)} large {market.upper()} companies:\n" + "\n".join(_line(r) for r in top) +
+    index_block = ("Index " + label + ":\n" + "\n".join(_line(r) for r in index_rows) + "\n\n") if index_rows else ""
+    return (index_block +
+            f"Top risers {label} among {len(rows)} large {market.upper()} companies:\n" + "\n".join(_line(r) for r in top) +
             f"\n\nBiggest fallers {label}:\n" + "\n".join(_line(r) for r in bottom) +
             f"\n(Only a watchlist of large companies is scanned, not the whole market.)\n{DISCLAIMER}")
 
 
 @tool("investment_scenario", "What an investment would have done: 'if I put 50000 in Tesla, what would it be now / over 1y'. "
+                             "Works for a company OR a whole market index ('S&P 500', 'Nifty 50', 'Sensex', 'Nasdaq') - "
+                             "use an index when the question is broad ('where should I invest') rather than about one company, "
+                             "so the answer is grounded in the market's actual long-term history, not a single stock's. "
                              "Uses real price history. Gives value, gain/loss, worst drop and risk. Cannot predict the future.",
-      {"amount": {"type": "number"}, "company": {"type": "string", "description": "ticker or name"},
+      {"amount": {"type": "number"}, "company": {"type": "string", "description": "ticker, company name, or index name"},
        "period": {"type": "string", "enum": ["1m", "3m", "6m", "1y", "5y"], "description": "default 1y"}}, ["amount", "company"])
 def investment_scenario(amount: float, company: str, period: str = "1y") -> str:
     rng, interval = _RANGES.get(period, _RANGES["1y"])
