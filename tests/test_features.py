@@ -683,6 +683,21 @@ def test_enter_key_skips_the_wake_word(monkeypatch):
     assert v._listen_whisper() == "check my resume" and v.ptt_until == 0.0
 
 
+def test_listening_prompt_reflects_whether_wake_word_is_needed(monkeypatch, capsys):
+    """The printed prompt must match reality: silent on this used to always say 'say hey jarvis',
+    even while already inside a no-wake-word follow-up window - misleading the user into repeating it."""
+    v = Voice()
+    v._ptt_thread = object()
+    monkeypatch.setattr(v, "record", lambda **k: np.zeros(16000, "float32"))
+    monkeypatch.setattr(v, "transcribe", lambda a, prompt=None: ("yes please", -0.1))
+    v.follow_until = __import__("time").time() + 10   # still inside the follow-up window
+    capsys.readouterr()
+    v._listen_whisper()
+    out = capsys.readouterr().out
+    assert "no need for the wake word" in out
+    assert "Listening for 'hey jarvis'" not in out
+
+
 # ------------------------------------------------------------ ElevenLabs voice (mocked: no real key or network in tests)
 def _el(monkeypatch, status=200, body=b"\x01\x00" * 8000, key="k"):
     import httpx
