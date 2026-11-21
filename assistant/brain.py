@@ -145,6 +145,7 @@ class Agent:
         self.order = [b for b in config.BRAIN_ORDER
                       if (b == "claude" and client is not None) or (b == "groq" and config.GROQ_API_KEY)
                       or b == "ollama"]
+        self._confusion_streak = 0      # consecutive "did you mean...?"-style replies: patience escalates with this
 
     def _tools_for(self, user_text: str) -> list:
         """The tool list to send to a small-context brain for this request (see _CORE_TOOLS)."""
@@ -183,14 +184,30 @@ class Agent:
             return False   # (a background task does the saving/sending, so the claim is about the future)
         return any(pat.search(reply) and not (need & self.turn_tools) for pat, need in self._CLAIMS)
 
+    # matches the assistant's own clarification-style replies ("did you mean...?", "I heard X but...",
+    # "could you say that again?") so repeated confusion can be noticed regardless of what triggered it -
+    # the confidence hint below, or the model's own judgement on garbled text.
+    _CLARIFY_REPLY = re.compile(r"did you mean|i'?m not (sure|confident)|could you (say|repeat)|"
+                                 r"what did you mean|say (that|it) again|can you repeat", re.I)
+
     def run(self, user_text: str, confidence: float = 1.0) -> str:
         """Run the agent loop. confidence is Whisper's confidence (0-1 scale, or -9 for silence)."""
         self.turn_tools = set()
         self._announced = False
+        if self._confusion_streak >= 2:
+            # Smith-style patience escalation: after repeated mishearing, don't just repeat the same
+            # flat "did you mean X?" a third time - acknowledge it, simplify, and offer concrete options
+            # or an easier way forward (typing, yes/no) instead of guessing the same way again.
+            user_text = (f"{user_text}\n\n[This is the {self._confusion_streak + 1}th attempt in a row where "
+                         f"speech recognition or understanding has failed. Be visibly more patient and a little "
+                         f"reassuring - don't just repeat the same kind of clarifying question again. Either offer "
+                         f"2-3 concrete, clearly different guesses to choose from, or suggest an easier way forward "
+                         f"(e.g. typing the request, or a simpler yes/no).]")
         reply = self._run_brains(user_text, confidence)
         if self._false_claim(reply):  # said "saved/sent/set" but no such tool ran: never leave that standing
             print(f"  (the model said {reply[:160]!r} but ran no matching tool)")
             reply = "I said I'd done that, but nothing was actually done. Shall I go ahead?"
+        self._confusion_streak = self._confusion_streak + 1 if self._CLARIFY_REPLY.search(reply) else 0
         return reply
 
     def _run_brains(self, user_text: str, confidence: float = 1.0) -> str:

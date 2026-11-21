@@ -260,6 +260,23 @@ def test_false_claim_is_corrected_without_extra_model_call(monkeypatch):
     assert not config.NOTES_DIR.exists() or not any("news" in n.lower() for n in os.listdir(config.NOTES_DIR))
 
 
+def test_patience_escalates_after_repeated_mishearing(monkeypatch):
+    """Smith-style: don't just repeat the same flat clarifying question a third time in a row."""
+    a = groq_agent(monkeypatch, [
+        msg("Did you mean to open your resume?"),
+        msg("I'm not sure what you meant there."),
+        msg("Could you say that again, more simply?"),
+        msg("Opening Spotify."),
+    ])
+    for i in range(3):
+        a.run(f"garbled {i}", confidence=0.9)
+    assert "attempt in a row" not in a.payloads[0][1]["messages"][-1]["content"]
+    assert "attempt in a row" not in a.payloads[1][1]["messages"][-1]["content"]
+    assert "attempt in a row" in a.payloads[2][1]["messages"][-1]["content"]   # 3rd consecutive: patience kicks in
+    a.run("open spotify", confidence=0.9)
+    assert a._confusion_streak == 0   # a normal reply resets the streak
+
+
 def test_true_claim_and_negations_are_left_alone(monkeypatch):
     a = groq_agent(monkeypatch, [msg(calls=[call("save_note", {"title": "T", "content": "x"})]), msg("Saved it to a note.")])
     assert a.run("save a note") == "Saved it to a note."
