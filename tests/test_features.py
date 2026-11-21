@@ -557,9 +557,19 @@ def test_followup_without_wake_word_must_be_clear():
     v.last_conf = -0.3
     assert v._plausible_followup("remind me to call mom")
     assert not v._plausible_followup("thank you")      # filler / classic hallucination
-    assert not v._plausible_followup("yeah")           # single word
+    assert not v._plausible_followup("okay")           # genuine noise/filler, not an answer
     v.last_conf = -1.2
     assert not v._plausible_followup("remind me to call mom")   # Whisper itself isn't sure
+
+
+def test_short_answers_are_accepted_as_followups():
+    """A one-word reply (a name, a number, yes/no) is exactly what a natural follow-up often looks like -
+    real transcripts showed 'Boeing' and 'yeah' both wrongly rejected for being short, forcing the wake
+    word to be repeated for something as simple as answering a question Jarvis just asked."""
+    v = Voice()
+    v.last_conf = -0.3
+    for word in ("yes", "yeah", "yep", "no", "nope", "cancel", "Boeing", "Tesla", "six"):
+        assert v._plausible_followup(word), f"{word!r} should be accepted as a short followup"
 
 
 def test_say_voice_renders_to_wav_with_envelope(monkeypatch):
