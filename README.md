@@ -94,6 +94,9 @@ This is an "alias mode" build: lightweight and tied to this project folder stayi
 | `SHOW_VISUALIZER` | `1` | Crystal-sphere browser visualizer on/off |
 | `MAX_REQUEST_SECONDS` | `30` | How long a single spoken request can run before it's cut off |
 | `AUTO_APPROVE_TOOLS` | empty | Comma-separated tools that skip the yes/no prompt |
+| `TTS_ENGINE` | `piper` | `piper` (offline), `say` (macOS built-in voices), or `elevenlabs` (most natural, needs an API key) |
+| `TTS_VOICE` | `Samantha` | For `TTS_ENGINE=say` - try `Rishi` for Indian English (download it in System Settings > Accessibility > Spoken Content first) |
+| `ELEVENLABS_API_KEY` | empty | Enables `TTS_ENGINE=elevenlabs`; defaults to "Vikram," an Indian English voice |
 
 ## 8 GB tips
 
