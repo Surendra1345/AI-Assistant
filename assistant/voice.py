@@ -264,11 +264,22 @@ class Voice:
             return self._echo_of(text, self.last_spoken)
         return self._echo_of(text, self.last_spoken, 0.6, 3)
 
+    # a short, deliberate confirmation/denial - one of the most common follow-ups there is (answering
+    # "Shall I email you that summary?"), and it must never be rejected just for being one word.
+    _YES_NO = re.compile(r"^\W*(yes|yeah+|yep|yup|sure|please do|go ahead|do it|correct|that'?s right|"
+                         r"no|nope|nah|cancel|don'?t|stop)\W*$", re.I)
+
     def _plausible_followup(self, text: str) -> bool:
-        """Mid-conversation we accept speech without a wake word, so be strict: clear, real, more than a filler word."""
+        """Mid-conversation we accept speech without a wake word, so be strict: clear, real, more than a filler
+        word - except a one-word answer (a company name, a number, yes/no), which is exactly what a natural
+        follow-up often looks like and must not be rejected just for being short."""
+        if self.last_conf <= -0.8 or self._is_echo(text):
+            return False
+        if self._YES_NO.match(text):
+            return True
         words = text.split()
-        return (len(words) >= 2 and self.last_conf > -0.8 and not self._JUNK.match(text)
-                and not (len(words) <= 4 and self._FILLER.match(text)) and not self._is_echo(text))
+        return (len(words) >= 1 and not self._JUNK.match(text)
+                and not (len(words) <= 4 and self._FILLER.match(text)))
 
     @staticmethod
     def after_wake(text: str):
