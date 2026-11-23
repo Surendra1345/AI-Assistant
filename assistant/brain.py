@@ -37,6 +37,11 @@ Be a human-style assistant, not a command parser:
 
 Character: composed and brief, with dry wit used sparingly (never jokes while reporting something serious). {title_rule} Report results like a trusted aide ("The numbers are in: ..."), flag risks plainly, and when there is an obvious useful next step, offer exactly one ("Shall I email you that summary?"). Never gush or apologise at length.
 
+Tone shifts with the situation - don't use one flat register for everything:
+- Routine (lookups, normal chat): the composed, briefly witty tone above.
+- Urgent or risky (something dangerous, time-critical, or about to send/run/delete something): drop the wit entirely, go shorter and more direct. State the risk and the one decision needed, nothing else - "This will delete 40 files. Confirm?" not "I've prepared a plan that will remove quite a few files, shall I go ahead?"
+- The user sounds frustrated (says "no", "that's not what I asked", "still wrong", raises the same correction twice, or anything short and clipped after an error): drop the wit, acknowledge briefly and plainly ("Let me try that differently"), then actually change approach - don't repeat the same kind of answer that just failed.
+
 Style: your replies are SPOKEN aloud. Keep them short and natural: one to three sentences. No markdown, no bullet lists, no URLs read out. For anything long, save a note and say where it is."""
 
 
@@ -190,6 +195,12 @@ class Agent:
     _CLARIFY_REPLY = re.compile(r"did you mean|i'?m not (sure|confident)|could you (say|repeat)|"
                                  r"what did you mean|say (that|it) again|can you repeat", re.I)
 
+    # the USER sounding frustrated - distinct from mishearing: it heard them fine, but got it wrong, or
+    # they're repeating a correction. Deliberately doesn't match a bare "no" (a legitimate yes/no answer).
+    _FRUSTRATION = re.compile(r"\bnot what i (asked|meant|said|wanted)\b|\bthat'?s (not right|wrong)\b|"
+                               r"\bstill (wrong|not|didn'?t)\b|\bi (already )?(said|told you)\b|\bno,? i (said|meant|want)\b|"
+                               r"\b(ugh|come on|forget it|never ?mind that|that'?s not it)\b", re.I)
+
     def run(self, user_text: str, confidence: float = 1.0) -> str:
         """Run the agent loop. confidence is Whisper's confidence (0-1 scale, or -9 for silence)."""
         self.turn_tools = set()
@@ -203,6 +214,14 @@ class Agent:
                          f"reassuring - don't just repeat the same kind of clarifying question again. Either offer "
                          f"2-3 concrete, clearly different guesses to choose from, or suggest an easier way forward "
                          f"(e.g. typing the request, or a simpler yes/no).]")
+        elif self._FRUSTRATION.search(user_text):
+            # It heard them correctly this time, but got the request wrong or missed something - a
+            # different failure mode from mishearing, and it needs a different response: no wit, a brief
+            # acknowledgement, and an actual change of approach rather than trying the same thing again.
+            user_text = (f"{user_text}\n\n[The user sounds frustrated - this was understood correctly but "
+                         f"something about the answer or action was wrong. Drop any wit, acknowledge briefly "
+                         f"and plainly (e.g. \"Let me try that differently\"), then genuinely change approach - "
+                         f"don't just repeat the previous answer in different words.]")
         reply = self._run_brains(user_text, confidence)
         if self._false_claim(reply):  # said "saved/sent/set" but no such tool ran: never leave that standing
             print(f"  (the model said {reply[:160]!r} but ran no matching tool)")
