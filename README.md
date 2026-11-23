@@ -58,6 +58,15 @@ Mid-conversation, you don't need to repeat the wake word for follow-ups ("and br
 
 A small browser page shows a glowing crystal-sphere that reacts live to your voice: gentle idle breathing, ripples with your mic level while listening, pulses with its own speech while talking. It's plain HTML/CSS/Canvas (`assistant/webui/`), served locally by `assistant/webserver.py` and opened automatically in your default browser. Disable with `SHOW_VISUALIZER=0` in `.env`.
 
+## Using it from your phone (optional)
+
+Set `REMOTE_ACCESS=1` in `.env` and the same assistant - same conversation, same tools, same approval prompts - becomes reachable from any phone on the same Wi-Fi, via a simple text chat page at `http://<this-Mac's-LAN-IP>:8765/chat` (the exact address is printed when the assistant starts). Works from any phone's browser, Android included.
+
+- Voice input on the page uses the *browser's own* speech recognition (not routed through the Mac's Whisper) - note this needs a "secure context" (https, or localhost), so it will likely be unavailable over a plain `http://<lan-ip>` page; text input always works regardless.
+- A reply to a phone message is sent back to the phone and is **not** also spoken aloud on the Mac.
+- There's no login and no encryption - this is meant for your own home Wi-Fi, not for exposing to the internet (don't port-forward this).
+- Off by default. When on, the web server binds to every network interface instead of just this machine, which is the only behavior change - everything else (voice, visualizer) works exactly as before.
+
 ## Running it as its own app (so macOS asks permission as "Jarvis", not your terminal/editor)
 
 By default, macOS attributes microphone and Automation permission prompts to whatever process launched Python — your terminal or IDE. `setup.py` packages the assistant as `Jarvis.app` so it owns its own permission identity instead, the same way any installed app does:
@@ -92,6 +101,7 @@ This is an "alias mode" build: lightweight and tied to this project folder stayi
 | `WAKE_MODE` | `wakeword` | `wakeword` (tiny model), `whisper` (accent-tolerant), or `enter` (press Enter) |
 | `BRAIN_ORDER` | `claude,groq,ollama` | Fallback order if one is rate-limited or unavailable |
 | `SHOW_VISUALIZER` | `1` | Crystal-sphere browser visualizer on/off |
+| `REMOTE_ACCESS` | `0` | Reach the assistant from your phone over Wi-Fi at `/chat` - see "Using it from your phone" above |
 | `MAX_REQUEST_SECONDS` | `30` | How long a single spoken request can run before it's cut off |
 | `AUTO_APPROVE_TOOLS` | empty | Comma-separated tools that skip the yes/no prompt |
 | `TTS_ENGINE` | `piper` | `piper` (offline), `say` (macOS built-in voices), or `elevenlabs` (most natural, needs an API key) |

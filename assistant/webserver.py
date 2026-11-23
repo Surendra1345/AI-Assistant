@@ -30,6 +30,7 @@ _CONTENT_TYPES = {
 
 class _Handler(BaseHTTPRequestHandler):
     server: "VisualizerHTTPServer"
+    REPLY_TIMEOUT = 90   # seconds to wait for the assistant's reply before giving the phone a 504
 
     def log_message(self, fmt, *args):
         log.debug("%s - %s", self.address_string(), fmt % args)
@@ -50,12 +51,48 @@ class _Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/":
             self._serve_file("index.html")
-        elif self.path in ("/style.css", "/app.js"):
+        elif self.path in ("/style.css", "/app.js", "/chat.html", "/chat.css", "/chat.js"):
             self._serve_file(self.path.lstrip("/"))
+        elif self.path == "/chat":
+            self._serve_file("chat.html")
         elif self.path == "/events":
             self._handle_sse()
         else:
             self.send_error(404)
+
+    def do_POST(self):
+        if self.path != "/api/message":
+            self.send_error(404)
+            return
+        if self.server.request_queue is None:
+            self._json(503, {"error": "Remote chat isn't wired up on this run."})
+            return
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+            body = json.loads(self.rfile.read(length) or b"{}")
+            text = str(body.get("text", "")).strip()
+        except (ValueError, json.JSONDecodeError):
+            self._json(400, {"error": "Bad request."})
+            return
+        if not text:
+            self._json(400, {"error": "Empty message."})
+            return
+        result: "queue.Queue" = queue.Queue(maxsize=1)
+        self.server.request_queue.put((text, 1.0, result.put))
+        try:
+            reply = result.get(timeout=self.REPLY_TIMEOUT)
+        except queue.Empty:
+            self._json(504, {"error": "Jarvis took too long to reply."})
+            return
+        self._json(200, {"reply": reply})
+
+    def _json(self, status: int, payload: dict):
+        data = json.dumps(payload).encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
 
     def _handle_sse(self):
         self.send_response(200)
@@ -80,10 +117,11 @@ class _Handler(BaseHTTPRequestHandler):
 class VisualizerHTTPServer(ThreadingHTTPServer):
     daemon_threads = True
 
-    def __init__(self, *a, **kw):
+    def __init__(self, *a, request_queue=None, **kw):
         super().__init__(*a, **kw)
         self._clients: list = []
         self._lock = threading.Lock()
+        self.request_queue = request_queue   # set when remote chat (phone access) is wired up; None otherwise
 
     def register_client(self) -> "queue.Queue":
         q = queue.Queue()
@@ -110,25 +148,46 @@ class VisualizerHTTPServer(ThreadingHTTPServer):
             q.put_nowait(None)
 
 
+def _lan_ip() -> str:
+    """Best-effort LAN IP to show the user (e.g. 'open this on your phone'). Doesn't actually send
+    anything - connecting a UDP socket just makes the OS pick the right local interface for us."""
+    import socket
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("8.8.8.8", 80))
+            return s.getsockname()[0]
+    except OSError:
+        return "127.0.0.1"
+
+
 class WebVisualizer:
     """Non-blocking handle, same interface as the old Tkinter Visualizer: start()/set_mode()/
-    set_level()/stop(). Every method swallows its own errors so the voice loop never breaks."""
+    set_level()/stop(). Every method swallows its own errors so the voice loop never breaks.
 
-    def __init__(self, port: int = None, open_browser: bool = True):
+    Pass request_queue to also serve /chat (a mobile-friendly page) and /api/message - this is how a
+    phone on the same Wi-Fi talks to the SAME assistant conversation. Only reachable from another
+    device when config.REMOTE_ACCESS is on, which binds the server to every interface instead of just
+    this machine; off (the default), everything here behaves exactly as before."""
+
+    def __init__(self, port: int = None, open_browser: bool = True, request_queue=None):
         self.port = port if port is not None else config.VISUALIZER_PORT
         self._open_browser = open_browser
+        self._request_queue = request_queue
         self._server = None
         self._thread = None
         self._ok = False
 
     def start(self):
         try:
-            self._server = VisualizerHTTPServer(("127.0.0.1", self.port), _Handler)
+            host = "0.0.0.0" if config.REMOTE_ACCESS else "127.0.0.1"
+            self._server = VisualizerHTTPServer((host, self.port), _Handler, request_queue=self._request_queue)
             self.port = self._server.server_address[1]
             self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
             self._thread.start()
             self._ok = True
             log.info(f"visualizer serving on http://127.0.0.1:{self.port}/")
+            if config.REMOTE_ACCESS and self._request_queue is not None:
+                print(f"Remote access on: open http://{_lan_ip()}:{self.port}/chat on your phone (same Wi-Fi).")
             if self._open_browser:
                 webbrowser.open(f"http://127.0.0.1:{self.port}/")
         except Exception as e:
