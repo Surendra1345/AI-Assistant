@@ -93,3 +93,9 @@ PAUSE_SECONDS = float(os.environ.get("PAUSE_SECONDS", "1.6"))    # raise to 2+ i
 
 SHOW_VISUALIZER = os.environ.get("SHOW_VISUALIZER", "1") == "1"  # crystal-ring page (HTML/CSS/JS) that pulses with voice
 VISUALIZER_PORT = int(os.environ.get("VISUALIZER_PORT", "8765"))
+
+# Off by default: turning this on binds the web server to every network interface (not just this Mac),
+# so your phone can reach http://<this-Mac's-LAN-IP>:8765/chat on the same Wi-Fi and talk to the same
+# assistant, same conversation, same tools. No login, no encryption - fine on a home network you trust,
+# not something to port-forward onto the internet.
+REMOTE_ACCESS = os.environ.get("REMOTE_ACCESS", "0") == "1"

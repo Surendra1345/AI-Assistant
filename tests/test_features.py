@@ -2,6 +2,7 @@
 Groq/Ollama brain path and fallback chain, barge-in, wake matching, config loader."""
 import os
 import tempfile
+import threading
 from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace as NS
@@ -568,6 +569,75 @@ def test_main_loop_survives_audio_errors(monkeypatch):
     with pytest.raises(SystemExit):
         main.main()
     assert calls["n"] == 3 and any("20" in t or ":" in t for t in calls["spoken"])
+
+
+def test_remote_access_routes_phone_messages_separately_from_voice(monkeypatch):
+    """With REMOTE_ACCESS on, a phone-submitted message (has a respond callback) must get its reply
+    through that callback, not spoken aloud on the Mac - and a voice-submitted 'quit' must still end
+    the whole assistant even though phone messages are now also flowing through the same queue."""
+    import queue as queue_mod
+    calls = {"spoken": []}
+    phone_delivered = threading.Event()   # only say "quit" once the phone's message has been injected
+
+    class V:
+        interactive = None
+        def __init__(self):
+            self.visualizer = None
+            self._texts = iter(["what time is it"])
+            self._quit_sent = False
+        def listen(self):
+            text = next(self._texts, None)
+            if text is not None:
+                return text
+            if self._quit_sent:
+                # main() has already exited by now; block forever (not a tight loop) so this leaked
+                # daemon thread doesn't spin at 100% CPU and slow down every other test in the session
+                threading.Event().wait()
+            phone_delivered.wait(timeout=5)   # don't race the phone message with the voice "quit"
+            self._quit_sent = True
+            return "quit"
+        def using_speakers(self): return True
+        def speak(self, t, barge=True): calls["spoken"].append(t)
+        def confirm(self, d): return True
+
+    captured = {}
+    queue_ready = threading.Event()
+
+    class FakeWebVisualizer:
+        def __init__(self, request_queue=None, open_browser=True):
+            captured["queue"] = request_queue
+            queue_ready.set()
+        def start(self): pass
+        def stop(self): pass
+
+    import assistant.voice as voicemod
+    import assistant.webserver as webservermod
+    monkeypatch.setattr(voicemod, "Voice", V)
+    monkeypatch.setattr(webservermod, "WebVisualizer", FakeWebVisualizer)
+    monkeypatch.setattr(config, "REMOTE_ACCESS", True)
+    monkeypatch.setattr(main.time, "sleep", lambda s: None)
+    monkeypatch.setattr(main, "build", lambda voice=None: (NS(run=lambda t, confidence=1.0: f"reply to {t}"), Approvals(lambda *a: None)))
+    monkeypatch.setattr(main, "greet", lambda v=None: None)
+    monkeypatch.setattr(main, "HealthCheck", lambda: NS(check_all=lambda: True, report=lambda: None))
+    monkeypatch.setattr("sys.argv", ["assistant"])
+
+    phone_replies = queue_mod.Queue()
+    received = {}
+
+    def phone_client():
+        if not queue_ready.wait(timeout=5):   # wait for main() to create and expose the request queue
+            received["error"] = "request queue was never created"
+            return
+        captured["queue"].put(("tell me about the quarterly report xyz123", 1.0, phone_replies.put))
+        received["reply"] = phone_replies.get(timeout=5)
+        phone_delivered.set()          # safe for the voice side to say "quit" now
+
+    threading.Thread(target=phone_client, daemon=True).start()
+    with pytest.raises(SystemExit):
+        main.main()
+    assert received["reply"] == "reply to tell me about the quarterly report xyz123"
+    assert "reply to tell me about the quarterly report xyz123" not in calls["spoken"]        # never spoken aloud on the Mac
+    assert any(":" in t for t in calls["spoken"])                    # the voice request (what time is it) still got spoken
 
 
 # ------------------------------------------------------------ own-voice handling: echo, strictness, smarter barge-in

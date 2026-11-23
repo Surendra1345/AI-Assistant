@@ -4,6 +4,7 @@ import argparse
 import random
 import re
 import sys
+import threading
 import time
 
 from datetime import datetime, timedelta
@@ -129,12 +130,16 @@ def main():
     args = ap.parse_args()
 
     voice = None
+    request_queue = None
     if not args.text:
         from .voice import Voice
         voice = Voice()
-        if config.SHOW_VISUALIZER:
+        if config.REMOTE_ACCESS:
+            import queue
+            request_queue = queue.Queue()
+        if config.SHOW_VISUALIZER or config.REMOTE_ACCESS:
             from .webserver import WebVisualizer
-            vis = WebVisualizer()
+            vis = WebVisualizer(request_queue=request_queue, open_browser=config.SHOW_VISUALIZER)
             vis.start()
             voice.visualizer = vis
     agent, approvals = build(voice)
@@ -153,23 +158,50 @@ def main():
     print("Ready. Say or type 'quit' to exit.")
     greet(voice)
     failures = 0
+
+    if request_queue is not None:
+        # Remote access is on: a background thread owns the actual voice.listen() calls (with the
+        # exact same retry/backoff it always had), feeding text into the same queue a phone's
+        # /api/message POST also feeds into - so voice and phone both drive one shared conversation.
+        def _voice_feed():
+            tries = 0
+            while True:
+                try:
+                    heard = voice.listen()
+                    tries = 0
+                except Exception as e:
+                    tries += 1
+                    delay = min(2 * tries, 15)
+                    print(f"(hiccup: {type(e).__name__}: {str(e)[:120]}. Retrying in {delay}s...)")
+                    time.sleep(delay)
+                    continue
+                if heard:
+                    request_queue.put((heard, getattr(voice, "last_conf", 1.0), None))
+        threading.Thread(target=_voice_feed, daemon=True).start()
+
     try:
         while True:
             try:
-                text = voice.listen() if voice else input("\nYou: ").strip()
+                if request_queue is not None:
+                    text, conf, respond = request_queue.get()
+                elif voice:
+                    text, conf, respond = voice.listen(), getattr(voice, "last_conf", 1.0), None
+                else:
+                    text, conf, respond = input("\nYou: ").strip(), 1.0, None
                 if not text:
                     failures = 0
                     continue
                 if voice:
                     print(f"You: {text}")
-                if re.fullmatch(r"\W*(quit|exit|goodbye|stop listening)\W*", text, re.I):
+                if respond is None and re.fullmatch(r"\W*(quit|exit|goodbye|stop listening)\W*", text, re.I):
                     break
-                conf = getattr(voice, "last_conf", 1.0) if voice else 1.0
                 reply = handle(agent, approvals, text, conf)
                 failures = 0
                 if not reply:
                     continue
-                if voice:
+                if respond is not None:
+                    respond(reply)                     # phone request: send the HTTP reply back, don't also speak locally
+                elif voice:
                     voice.speak(reply)
                     if DISMISS.match(text):            # conversation over: back to waiting for the wake word
                         voice.last_active, voice.follow_until = 0.0, 0.0
