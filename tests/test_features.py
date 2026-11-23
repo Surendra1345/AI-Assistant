@@ -127,7 +127,8 @@ def test_memory_roundtrip_and_prompt():
     assert "Surendra" not in brain._system_prompt()
 
 
-def test_briefing_and_greet_once(capsys):
+def test_briefing_and_greet_once(capsys, monkeypatch):
+    monkeypatch.setattr(main.logging_config, "recent_errors", lambda since, limit=5: [])  # isolate from the real log
     today = datetime.now().strftime("%Y-%m-%dT23:59")
     tools.add_todo("pay rent", today)
     tid = store.execute("INSERT INTO tasks (goal,status,created,updated) VALUES ('research x','done','n','n')")
@@ -139,6 +140,18 @@ def test_briefing_and_greet_once(capsys):
     assert "pay rent" in first
     main.greet(None)                       # same day, nothing new finished: stays quiet
     assert capsys.readouterr().out == ""
+
+
+def test_greet_reports_recent_errors_once(capsys, monkeypatch):
+    """Self-diagnosis: errors logged since the last check get mentioned once, then don't repeat."""
+    monkeypatch.setattr(main.logging_config, "recent_errors", lambda since, limit=5: ["Network timeout on mail search"])
+    store.execute("DELETE FROM meta WHERE key IN ('last_greet', 'last_log_check')")
+    main.greet(None)
+    out = capsys.readouterr().out
+    assert "ran into 1 error" in out and "Network timeout on mail search" in out
+    monkeypatch.setattr(main.logging_config, "recent_errors", lambda since, limit=5: [])   # nothing new now
+    main.greet(None)
+    assert capsys.readouterr().out == ""   # already greeted today, nothing new finished, nothing new wrong
 
 
 # ------------------------------------------------------------ proactive monitor
@@ -275,6 +288,21 @@ def test_patience_escalates_after_repeated_mishearing(monkeypatch):
     assert "attempt in a row" in a.payloads[2][1]["messages"][-1]["content"]   # 3rd consecutive: patience kicks in
     a.run("open spotify", confidence=0.9)
     assert a._confusion_streak == 0   # a normal reply resets the streak
+
+
+def test_frustration_is_flagged_immediately_not_after_a_streak(monkeypatch):
+    """Unlike mishearing, frustration ('that's wrong') is flagged on the first occurrence - it was heard
+    correctly, something else went wrong, and that needs a different response straight away."""
+    a = groq_agent(monkeypatch, [msg("Trying a different approach: opening Chrome instead.")])
+    a.run("No, that's not what I asked", confidence=0.9)
+    sent = a.payloads[0][1]["messages"][-1]["content"]
+    assert "frustrated" in sent and "drop any wit" in sent.lower()
+
+
+def test_bare_no_is_not_mistaken_for_frustration(monkeypatch):
+    a = groq_agent(monkeypatch, [msg("Cancelled.")])
+    a.run("no", confidence=0.9)
+    assert "frustrated" not in a.payloads[0][1]["messages"][-1]["content"]
 
 
 def test_true_claim_and_negations_are_left_alone(monkeypatch):

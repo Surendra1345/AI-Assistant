@@ -6,7 +6,7 @@ import re
 import sys
 import time
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from . import config, finance, logging_config, macos, router, store, tools  # noqa: F401 (finance registers its tools)
 from .brain import Agent
@@ -83,20 +83,35 @@ def handle(agent: Agent, approvals: Approvals, text: str, confidence: float = 1.
     return agent.run(text, confidence)
 
 
+def _self_diagnosis() -> str:
+    """Read its own error log back, once, for whatever happened since last checked - rather than
+    errors only ever existing silently in a file nobody looks at."""
+    last = store.query("SELECT value FROM meta WHERE key='last_log_check'")
+    since = datetime.fromisoformat(last[0]["value"]) if last else datetime.now() - timedelta(days=1)
+    store.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('last_log_check', ?)",
+                  (datetime.now().isoformat(timespec="seconds"),))
+    errors = logging_config.recent_errors(since)
+    if not errors:
+        return ""
+    n = len(errors)
+    return f" By the way, I ran into {n} error{'s' if n != 1 else ''} while running - most recently: {errors[-1][:160]}."
+
+
 def greet(voice=None):
     """Proactive: once per day (and whenever something finished while away), say what needs attention."""
     today = datetime.now().strftime("%Y-%m-%d")
     last = store.query("SELECT value FROM meta WHERE key='last_greet'")
     first_today = not last or last[0]["value"] != today
-    if not first_today and not store.query(
+    diagnosis = _self_diagnosis()
+    if not first_today and not diagnosis and not store.query(
             "SELECT 1 FROM tasks WHERE status IN ('done','failed') AND id NOT IN (SELECT task_id FROM reported)"):
-        return  # already greeted today and nothing new finished
+        return  # already greeted today, nothing new finished, and nothing went wrong
     brief = tools.briefing_text()
     store.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('last_greet', ?)", (today,))
     hour = datetime.now().hour
     hello = "Good morning" if hour < 12 else "Good afternoon" if hour < 18 else "Good evening"
     who = f", {config.USER_TITLE}" if config.USER_TITLE else ""
-    msg = f"{hello}{who}. " + (brief + "." if brief else "Nothing urgent on the schedule.")
+    msg = f"{hello}{who}. " + (brief + "." if brief else "Nothing urgent on the schedule.") + diagnosis
     voice.speak(msg) if voice else print(f"Assistant: {msg}")
 
 
